@@ -1,0 +1,59 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(gh pr:*)",
+      "Bash(source .venv/bin/:*)",
+      "Bash(python3 -c ':*)",
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)",
+      "Bash(python3)",
+      "Bash(python3:*)",
+      "Bash(gcloud logging:*)",
+      "Bash(gcloud secrets list:*)",
+      "Bash(gcloud run services describe:*)",
+      "Bash(python -c *)",
+      "Bash(gcloud scheduler:*)",
+      "Bash(gcloud functions:*)",
+      "Bash(git:*)",
+      "Bash(gh run:*)",
+      "Bash(ruff check:*)",
+      "Bash(gcloud firestore:*)",
+      "Bash(gcloud run:*)",
+      "Bash(cd:*)",
+      "Bash(mv:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(cp:*)",
+      "Bash(grep *)",
+      "Bash(gh pr create:*)",
+      "Bash(pytest:*)",
+      "Bash(tail:*)",
+      "Bash(*:*2>&1:*)"
+    ],
+    "deny": [
+      "Bash(rm *)",
+      "Bash(rm -rf *)",
+      "Bash(git delete *)",
+      "Bash(git reset --hard *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command' >> ~/.claude/bash-audit.log 2>/dev/null || true",
+            "statusMessage": "Logging bash command",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

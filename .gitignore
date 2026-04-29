@@ -1,0 +1,17 @@
+# PM tracking — not part of the codebase
+KANBAN.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/

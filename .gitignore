@@ -1,6 +1,9 @@
 # PM tracking — not part of the codebase
 KANBAN.md
 
+# Agent memory — local only
+.claude/
+
 # Python
 __pycache__/
 *.py[cod]

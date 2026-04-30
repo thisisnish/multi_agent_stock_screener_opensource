@@ -1,5 +1,5 @@
 """
-screener/lib/llm.py — LLM factory: provider routing, per-agent overrides,
+screener/lib/agent_creator.py — LLM factory: provider routing, per-agent overrides,
 and structured-output helpers.
 
 Public API
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
     from langchain_core.runnables import Runnable
 
-from screener.lib.config import AppConfig
+from screener.lib.config_loader import AppConfig
 
 # ---------------------------------------------------------------------------
 # Public exception
@@ -161,7 +161,7 @@ def init_chat_model(model_cfg: ModelConfig) -> "BaseChatModel":
 # P1-03b — Per-agent model override
 # ---------------------------------------------------------------------------
 
-#: Maps agent name to the attribute name on :class:`~screener.lib.config.LLMConfig`
+#: Maps agent name to the attribute name on :class:`~screener.lib.config_loader.LLMConfig`
 #: that holds its optional override string.
 _AGENT_OVERRIDE_ATTR: dict[str, str] = {
     "bull": "bull_model",

@@ -1,5 +1,5 @@
 """
-tests/test_config.py — Unit tests for screener/lib/config.py
+tests/test_config.py — Unit tests for screener/lib/config_loader.py
 
 Covers:
 - Happy path: valid YAML parses into AppConfig with correct values
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from screener.lib.config import AppConfig, ConfigError, load_config, _interpolate
+from screener.lib.config_loader import AppConfig, ConfigError, load_config, _interpolate
 
 
 # ---------------------------------------------------------------------------

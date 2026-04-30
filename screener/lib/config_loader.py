@@ -1,8 +1,8 @@
 """
-screener/lib/config.py — Config loader with env-var interpolation and Pydantic validation.
+screener/lib/config_loader.py — Config loader with env-var interpolation and Pydantic validation.
 
 Usage:
-    from screener.lib.config import load_config
+    from screener.lib.config_loader import load_config
 
     cfg = load_config("config/config.yaml")
     print(cfg.llm.model)

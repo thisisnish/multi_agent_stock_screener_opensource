@@ -77,7 +77,9 @@ def _make_app_config(provider: str = "firestore") -> AppConfig:
         storage=storage,
         signals=SignalsConfig(),
         screener=ScreenerConfig(),
-        notifications=NotificationsConfig(email=EmailConfig(enabled=False, recipients=[])),
+        notifications=NotificationsConfig(
+            email=EmailConfig(enabled=False, recipients=[])
+        ),
         edgar=EdgarConfig(),
     )
 
@@ -126,9 +128,7 @@ class TestFirestoreDAOGet:
         doc_ref.get = AsyncMock(return_value=snap)
         mock_client.collection.return_value.document.return_value = doc_ref
 
-        result = asyncio.get_event_loop().run_until_complete(
-            dao.get(TICKERS, "AAPL")
-        )
+        result = asyncio.get_event_loop().run_until_complete(dao.get(TICKERS, "AAPL"))
 
         assert result == {"symbol": "AAPL", "score": 72.4}
         mock_client.collection.assert_called_with(TICKERS)
@@ -142,9 +142,7 @@ class TestFirestoreDAOGet:
         doc_ref.get = AsyncMock(return_value=snap)
         mock_client.collection.return_value.document.return_value = doc_ref
 
-        result = asyncio.get_event_loop().run_until_complete(
-            dao.get(TICKERS, "ZZZZ")
-        )
+        result = asyncio.get_event_loop().run_until_complete(dao.get(TICKERS, "ZZZZ"))
 
         assert result is None
 
@@ -163,9 +161,7 @@ class TestFirestoreDAOSet:
         mock_client.collection.return_value.document.return_value = doc_ref
 
         payload = {"symbol": "TSLA", "score": 55.0}
-        asyncio.get_event_loop().run_until_complete(
-            dao.set(TICKERS, "TSLA", payload)
-        )
+        asyncio.get_event_loop().run_until_complete(dao.set(TICKERS, "TSLA", payload))
 
         doc_ref.set.assert_awaited_once_with(payload)
 
@@ -197,9 +193,7 @@ class TestFirestoreDAODelete:
         doc_ref.delete = AsyncMock(return_value=None)
         mock_client.collection.return_value.document.return_value = doc_ref
 
-        asyncio.get_event_loop().run_until_complete(
-            dao.delete(PICKS, "picks_202618")
-        )
+        asyncio.get_event_loop().run_until_complete(dao.delete(PICKS, "picks_202618"))
 
         doc_ref.delete.assert_awaited_once()
 
@@ -231,7 +225,9 @@ class TestFirestoreDAOQuery:
         # have .where() and .get()
         final_query = MagicMock()
         final_query.get = AsyncMock(
-            return_value=[_make_snap(exists=True, data={"status": "active", "ticker": "AAPL"})]
+            return_value=[
+                _make_snap(exists=True, data={"status": "active", "ticker": "AAPL"})
+            ]
         )
 
         where_chain = MagicMock()
@@ -253,9 +249,7 @@ class TestFirestoreDAOQuery:
         snap2 = _make_snap(exists=True, data={"symbol": "MSFT"})
         mock_client.collection.return_value.get = AsyncMock(return_value=[snap1, snap2])
 
-        result = asyncio.get_event_loop().run_until_complete(
-            dao.query(TICKERS, {})
-        )
+        result = asyncio.get_event_loop().run_until_complete(dao.query(TICKERS, {}))
 
         assert len(result) == 2
 
@@ -268,9 +262,7 @@ class TestFirestoreDAOQuery:
             return_value=[snap_ok, snap_bad]
         )
 
-        result = asyncio.get_event_loop().run_until_complete(
-            dao.query(TICKERS, {})
-        )
+        result = asyncio.get_event_loop().run_until_complete(dao.query(TICKERS, {}))
 
         assert len(result) == 1
         assert result[0]["symbol"] == "AAPL"

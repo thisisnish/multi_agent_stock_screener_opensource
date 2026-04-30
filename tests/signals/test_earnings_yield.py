@@ -23,6 +23,7 @@ MODULE = "screener.metrics.earnings_yield"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _ticker_mock(info: dict) -> MagicMock:
     mock = MagicMock()
     mock.info = info
@@ -36,6 +37,7 @@ def _patch_ticker(info: dict):
 # ---------------------------------------------------------------------------
 # _fetch_one unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestFetchOne:
     def test_normal_case(self):
@@ -69,7 +71,9 @@ class TestFetchOne:
         assert "trailingEps" in result["skip_reason"]
 
     def test_none_price_skipped(self):
-        with _patch_ticker({"trailingEps": 2.0, "currentPrice": None, "regularMarketPrice": None}):
+        with _patch_ticker(
+            {"trailingEps": 2.0, "currentPrice": None, "regularMarketPrice": None}
+        ):
             result = _fetch_one("AAPL")
         assert result["skipped"] is True
         assert "currentPrice" in result["skip_reason"]
@@ -80,7 +84,9 @@ class TestFetchOne:
         assert result["skipped"] is True
 
     def test_fallback_to_regular_market_price(self):
-        with _patch_ticker({"trailingEps": 5.0, "currentPrice": None, "regularMarketPrice": 200.0}):
+        with _patch_ticker(
+            {"trailingEps": 5.0, "currentPrice": None, "regularMarketPrice": 200.0}
+        ):
             result = _fetch_one("AAPL")
         assert result["skipped"] is False
         assert result["earnings_yield"] == pytest.approx(5.0 / 200.0)
@@ -95,19 +101,32 @@ class TestFetchOne:
     def test_all_result_keys_present(self):
         with _patch_ticker({"trailingEps": 1.0, "currentPrice": 50.0}):
             result = _fetch_one("AAPL")
-        expected_keys = {"earnings_yield", "trailing_eps", "price", "skipped", "skip_reason"}
+        expected_keys = {
+            "earnings_yield",
+            "trailing_eps",
+            "price",
+            "skipped",
+            "skip_reason",
+        }
         assert set(result.keys()) == expected_keys
 
     def test_all_result_keys_present_on_skip(self):
         with _patch_ticker({"trailingEps": None, "currentPrice": 50.0}):
             result = _fetch_one("AAPL")
-        expected_keys = {"earnings_yield", "trailing_eps", "price", "skipped", "skip_reason"}
+        expected_keys = {
+            "earnings_yield",
+            "trailing_eps",
+            "price",
+            "skipped",
+            "skip_reason",
+        }
         assert set(result.keys()) == expected_keys
 
 
 # ---------------------------------------------------------------------------
 # fetch_earnings_yield integration-level unit tests (no network)
 # ---------------------------------------------------------------------------
+
 
 class TestFetchEarningsYield:
     def test_returns_all_tickers(self):
@@ -124,24 +143,32 @@ class TestFetchEarningsYield:
     def test_no_sleep_for_single_batch(self):
         tickers = [f"T{i}" for i in range(10)]
         info = {"trailingEps": 1.0, "currentPrice": 50.0}
-        with patch(f"{MODULE}.yf.Ticker", return_value=_ticker_mock(info)), \
-             patch(f"{MODULE}.time.sleep") as mock_sleep:
+        with (
+            patch(f"{MODULE}.yf.Ticker", return_value=_ticker_mock(info)),
+            patch(f"{MODULE}.time.sleep") as mock_sleep,
+        ):
             fetch_earnings_yield(tickers)
         mock_sleep.assert_not_called()
 
     def test_sleep_between_batches_for_51_tickers(self):
         tickers = [f"T{i}" for i in range(51)]
         info = {"trailingEps": 1.0, "currentPrice": 50.0}
-        with patch(f"{MODULE}.yf.Ticker", return_value=_ticker_mock(info)), \
-             patch(f"{MODULE}.time.sleep") as mock_sleep:
+        with (
+            patch(f"{MODULE}.yf.Ticker", return_value=_ticker_mock(info)),
+            patch(f"{MODULE}.time.sleep") as mock_sleep,
+        ):
             fetch_earnings_yield(tickers)
         mock_sleep.assert_called_once()
 
     def test_abort_signal_raised_when_skip_rate_exceeds_threshold(self):
         # 20 tickers, all skip → 100% skip rate > 15%
         tickers = [f"T{i}" for i in range(20)]
-        with patch(f"{MODULE}.yf.Ticker", return_value=_ticker_mock({"trailingEps": None})), \
-             patch(f"{MODULE}.time.sleep"):
+        with (
+            patch(
+                f"{MODULE}.yf.Ticker", return_value=_ticker_mock({"trailingEps": None})
+            ),
+            patch(f"{MODULE}.time.sleep"),
+        ):
             with pytest.raises(AbortSignal):
                 fetch_earnings_yield(tickers)
 
@@ -156,8 +183,10 @@ class TestFetchEarningsYield:
             idx = int(symbol[1:])
             return _ticker_mock(bad_info if idx < 3 else good_info)
 
-        with patch(f"{MODULE}.yf.Ticker", side_effect=side_effect), \
-             patch(f"{MODULE}.time.sleep"):
+        with (
+            patch(f"{MODULE}.yf.Ticker", side_effect=side_effect),
+            patch(f"{MODULE}.time.sleep"),
+        ):
             results = fetch_earnings_yield(tickers)
         # 3/20 = 15% = MAX_SKIP_RATE — no raise
         assert len(results) == 20
@@ -172,7 +201,9 @@ class TestFetchEarningsYield:
             idx = int(symbol[1:])
             return _ticker_mock(bad_info if idx < 10 else good_info)
 
-        with patch(f"{MODULE}.yf.Ticker", side_effect=side_effect), \
-             patch(f"{MODULE}.time.sleep"):
+        with (
+            patch(f"{MODULE}.yf.Ticker", side_effect=side_effect),
+            patch(f"{MODULE}.time.sleep"),
+        ):
             results = fetch_earnings_yield(tickers)
         assert len(results) == 100

@@ -59,7 +59,7 @@ def test_validate_rubric_invalid_threshold():
 def test_rubric_definition_rejects_bad_weights():
     with pytest.raises(ValidationError):
         RubricDefinition(
-            accuracy_weight=41,        # 41+30+15+15 = 101
+            accuracy_weight=41,  # 41+30+15+15 = 101
             confidence_alignment_weight=30,
             timing_quality_weight=15,
             risk_management_weight=15,

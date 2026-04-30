@@ -52,7 +52,9 @@ def fetch_fcf_yield(tickers: list[str]) -> dict[str, dict]:
         if batch_start + BATCH_SIZE < len(tickers):
             time.sleep(BATCH_SLEEP)
 
-    logger.info("fcf_yield fetch complete", extra={"total": len(tickers), "skipped": skipped})
+    logger.info(
+        "fcf_yield fetch complete", extra={"total": len(tickers), "skipped": skipped}
+    )
     return results
 
 

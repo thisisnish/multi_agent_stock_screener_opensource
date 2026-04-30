@@ -117,7 +117,9 @@ def test_compute_hedge_penalty_no_hedges():
 def test_compute_hedge_penalty_multiple_tiers():
     """Multiple hedge words accumulate penalty, capped at -20."""
     # tier_2 "uncertain" = -2, tier_1 "might" = -1, tier_1 "could" = -1 → -4
-    penalty = compute_hedge_penalty("The outcome is uncertain and might could be difficult.")
+    penalty = compute_hedge_penalty(
+        "The outcome is uncertain and might could be difficult."
+    )
     assert penalty <= -3.0
 
 
@@ -223,7 +225,14 @@ def test_conviction_scorer_score_bounded():
         bear_arguments=["A"] * 10,  # more than max
         counter_arguments=["C"] * 10,
         bear_counter_argument="Concedes.",
-        signal_citations=["Technical", "Earnings", "FCF", "EBITDA", "Sentiment", "Disclosures"],
+        signal_citations=[
+            "Technical",
+            "Earnings",
+            "FCF",
+            "EBITDA",
+            "Sentiment",
+            "Disclosures",
+        ],
     )
     score = score_conviction(bear, "bear")
     assert 0.0 <= score <= 100.0
@@ -319,7 +328,9 @@ def test_conviction_gap_small_no_contested():
 
 def test_conviction_gap_contested_margin():
     """Conviction gap > 30 + CONTESTED margin → contested_truth=True."""
-    judge = _make_judge_output(action="HOLD", margin="CONTESTED", winning_side="NEUTRAL")
+    judge = _make_judge_output(
+        action="HOLD", margin="CONTESTED", winning_side="NEUTRAL"
+    )
     _, contested, _ = score_judge_confidence(
         judge,
         bull_conviction=85.0,

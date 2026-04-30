@@ -27,6 +27,7 @@ MODULE = "screener.metrics.ebitda_ev"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _ticker_mock(info: dict) -> MagicMock:
     mock = MagicMock()
     mock.info = info
@@ -41,9 +42,16 @@ def _patch_ticker(info: dict):
 # _fetch_one unit tests
 # ---------------------------------------------------------------------------
 
+
 class TestFetchOne:
     def test_normal_case(self):
-        with _patch_ticker({"ebitda": 20_000_000, "enterpriseValue": 200_000_000, "mostRecentQuarter": 1700000000}):
+        with _patch_ticker(
+            {
+                "ebitda": 20_000_000,
+                "enterpriseValue": 200_000_000,
+                "mostRecentQuarter": 1700000000,
+            }
+        ):
             result = _fetch_one("AAPL")
         assert result["skipped"] is False
         assert result["ebitda_ev"] == pytest.approx(0.10)
@@ -97,7 +105,13 @@ class TestFetchOne:
 
     def test_most_recent_quarter_stored_correctly(self):
         mrq = 1700000000
-        with _patch_ticker({"ebitda": 10_000_000, "enterpriseValue": 100_000_000, "mostRecentQuarter": mrq}):
+        with _patch_ticker(
+            {
+                "ebitda": 10_000_000,
+                "enterpriseValue": 100_000_000,
+                "mostRecentQuarter": mrq,
+            }
+        ):
             result = _fetch_one("AAPL")
         assert result["most_recent_quarter"] == int(float(mrq))
 
@@ -115,19 +129,34 @@ class TestFetchOne:
     def test_all_result_keys_present(self):
         with _patch_ticker({"ebitda": 10_000_000, "enterpriseValue": 100_000_000}):
             result = _fetch_one("AAPL")
-        expected = {"ebitda_ev", "ebitda", "enterprise_value", "most_recent_quarter", "skipped", "skip_reason"}
+        expected = {
+            "ebitda_ev",
+            "ebitda",
+            "enterprise_value",
+            "most_recent_quarter",
+            "skipped",
+            "skip_reason",
+        }
         assert set(result.keys()) == expected
 
     def test_all_result_keys_present_on_skip(self):
         with _patch_ticker({"ebitda": None, "enterpriseValue": 100_000_000}):
             result = _fetch_one("AAPL")
-        expected = {"ebitda_ev", "ebitda", "enterprise_value", "most_recent_quarter", "skipped", "skip_reason"}
+        expected = {
+            "ebitda_ev",
+            "ebitda",
+            "enterprise_value",
+            "most_recent_quarter",
+            "skipped",
+            "skip_reason",
+        }
         assert set(result.keys()) == expected
 
 
 # ---------------------------------------------------------------------------
 # fetch_ebitda_ev integration-level unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestFetchEbitdaEv:
     def test_returns_all_tickers(self):
@@ -160,6 +189,7 @@ class TestFetchEbitdaEv:
 # write_quarterly_signals async tests
 # ---------------------------------------------------------------------------
 
+
 class TestWriteQuarterlySignals:
     def test_dao_set_called_with_merge_true(self):
         dao = AsyncMock()
@@ -167,7 +197,10 @@ class TestWriteQuarterlySignals:
         quarter_id = "2024-Q1"
 
         import asyncio
-        asyncio.get_event_loop().run_until_complete(write_quarterly_signals(signals, quarter_id, dao))
+
+        asyncio.get_event_loop().run_until_complete(
+            write_quarterly_signals(signals, quarter_id, dao)
+        )
 
         dao.set.assert_called_once()
         call_args = dao.set.call_args
@@ -181,7 +214,10 @@ class TestWriteQuarterlySignals:
         quarter_id = "2024-Q2"
 
         import asyncio
-        asyncio.get_event_loop().run_until_complete(write_quarterly_signals(signals, quarter_id, dao))
+
+        asyncio.get_event_loop().run_until_complete(
+            write_quarterly_signals(signals, quarter_id, dao)
+        )
 
         payload = dao.set.call_args.args[2]
         assert EBITDA_SIGNAL_KEY in payload
@@ -193,14 +229,20 @@ class TestWriteQuarterlySignals:
         quarter_id = "2024-Q3"
 
         import asyncio
-        asyncio.get_event_loop().run_until_complete(write_quarterly_signals(signals, quarter_id, dao))
+
+        asyncio.get_event_loop().run_until_complete(
+            write_quarterly_signals(signals, quarter_id, dao)
+        )
 
         payload = dao.set.call_args.args[2]
         assert payload["quarter_id"] == quarter_id
 
     def test_payload_contains_timestamp(self):
         import asyncio
+
         dao = AsyncMock()
-        asyncio.get_event_loop().run_until_complete(write_quarterly_signals({}, "2024-Q4", dao))
+        asyncio.get_event_loop().run_until_complete(
+            write_quarterly_signals({}, "2024-Q4", dao)
+        )
         payload = dao.set.call_args.args[2]
         assert "ebitda_written_ts" in payload

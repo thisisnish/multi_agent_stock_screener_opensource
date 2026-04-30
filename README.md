@@ -214,7 +214,7 @@ python jobs/edgar_disclosure/main.py
 
 **Tests:**
 ```bash
-pytest tests/ -v
+pytest tests/ -v -n auto
 ```
 
 ---

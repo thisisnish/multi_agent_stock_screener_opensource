@@ -25,7 +25,10 @@ from screener.metrics.technical import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_df(n: int, start_price: float = 100.0, slope: float = 0.5, volume: float = 1_000_000.0) -> pd.DataFrame:
+
+def _make_df(
+    n: int, start_price: float = 100.0, slope: float = 0.5, volume: float = 1_000_000.0
+) -> pd.DataFrame:
     """
     Synthetic OHLCV data with a slight upward trend but alternating noise so that
     RSI is well-defined (both gains and losses exist across the series).
@@ -45,6 +48,7 @@ def _make_df(n: int, start_price: float = 100.0, slope: float = 0.5, volume: flo
 # ---------------------------------------------------------------------------
 # compute_score — data-level guards
 # ---------------------------------------------------------------------------
+
 
 class TestComputeScoreGuards:
     def test_none_df_returns_skipped(self):
@@ -104,6 +108,7 @@ class TestComputeScoreGuards:
 # _rsi_score
 # ---------------------------------------------------------------------------
 
+
 class TestRsiScore:
     def test_rsi_below_30_returns_100(self):
         assert _rsi_score(20.0) == 100.0
@@ -149,17 +154,18 @@ class TestRsiScore:
     def test_rsi_score_declines_from_30_to_40(self):
         scores = [_rsi_score(float(r)) for r in range(30, 41)]
         for i in range(len(scores) - 1):
-            assert scores[i] >= scores[i + 1], f"Not declining at RSI={30+i}"
+            assert scores[i] >= scores[i + 1], f"Not declining at RSI={30 + i}"
 
     def test_rsi_score_declines_from_60_to_70(self):
         scores = [_rsi_score(float(r)) for r in range(60, 71)]
         for i in range(len(scores) - 1):
-            assert scores[i] >= scores[i + 1], f"Not declining steeply at RSI={60+i}"
+            assert scores[i] >= scores[i + 1], f"Not declining steeply at RSI={60 + i}"
 
 
 # ---------------------------------------------------------------------------
 # _ma_score
 # ---------------------------------------------------------------------------
+
 
 class TestMaScore:
     def test_price_equals_ma_gives_50(self):
@@ -187,6 +193,7 @@ class TestMaScore:
 # _volume_score
 # ---------------------------------------------------------------------------
 
+
 class TestVolumeScore:
     def test_vol_short_greater_than_long_above_50(self):
         assert _volume_score(2_000_000.0, 1_000_000.0) > 50.0
@@ -207,6 +214,7 @@ class TestVolumeScore:
 # ---------------------------------------------------------------------------
 # _momentum_score
 # ---------------------------------------------------------------------------
+
 
 class TestMomentumScore:
     def test_positive_pct_change_above_50(self):

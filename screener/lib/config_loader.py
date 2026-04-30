@@ -56,6 +56,7 @@ _ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 def _interpolate(value: object) -> object:
     """Recursively resolve ${VAR_NAME} placeholders in strings, lists, dicts."""
     if isinstance(value, str):
+
         def _replace(match: re.Match) -> str:
             var = match.group(1)
             resolved = os.environ.get(var)
@@ -119,9 +120,13 @@ class OpenSearchConfig(BaseModel):
 
 class StorageConfig(BaseModel):
     provider: str = "firestore"
-    firestore: FirestoreConfig = Field(default_factory=lambda: FirestoreConfig(project_id=""))
+    firestore: FirestoreConfig = Field(
+        default_factory=lambda: FirestoreConfig(project_id="")
+    )
     s3: S3Config = Field(default_factory=lambda: S3Config(bucket=""))
-    opensearch: OpenSearchConfig = Field(default_factory=lambda: OpenSearchConfig(host="localhost"))
+    opensearch: OpenSearchConfig = Field(
+        default_factory=lambda: OpenSearchConfig(host="localhost")
+    )
 
     @field_validator("provider")
     @classmethod
@@ -224,9 +229,7 @@ class EdgarConfig(BaseModel):
     @classmethod
     def overlap_must_be_fraction(cls, v: float) -> float:
         if not 0.0 <= v < 1.0:
-            raise ValueError(
-                f"edgar.chunk_overlap must be in [0.0, 1.0), got {v}"
-            )
+            raise ValueError(f"edgar.chunk_overlap must be in [0.0, 1.0), got {v}")
         return v
 
     @field_validator("similarity_threshold")

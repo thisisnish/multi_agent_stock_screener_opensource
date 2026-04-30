@@ -118,39 +118,41 @@ class ScoreResult(BaseModel):
     """Rubric-scored result for a single judge pick."""
 
     score: int = Field(ge=0, le=100)
-    accuracy: Optional[bool]            # True=beat SPY, False=underperformed, None=no outcome
+    accuracy: Optional[bool]  # True=beat SPY, False=underperformed, None=no outcome
     confidence_alignment: int = Field(ge=0, le=100)
     timing_quality: int = Field(ge=0, le=100)
     risk_management: int = Field(ge=0, le=100)
     error_flags: list[str]
     rationale: str
-    bull_accuracy: Optional[bool] = None   # True if BUY and beat SPY
-    bear_accuracy: Optional[bool] = None   # True if SELL and beat SPY
+    bull_accuracy: Optional[bool] = None  # True if BUY and beat SPY
+    bear_accuracy: Optional[bool] = None  # True if SELL and beat SPY
 
 
 class EvalMetrics(BaseModel):
     """Aggregated quality metrics for a month of judge picks."""
 
-    period: str                             # "YYYY-MM"
+    period: str  # "YYYY-MM"
     total_picks: int
     closed_picks: int
     open_picks: int
-    overall_accuracy: Optional[float]       # % (None if closed_picks == 0)
-    bull_accuracy: Optional[float]          # % of BUY picks beating SPY
-    bear_accuracy: Optional[float]          # % of SELL picks beating SPY
-    avg_confidence: float                   # 0-100
-    avg_score: float                        # 0-100
-    confidence_calibration: float           # |avg_confidence - overall_accuracy|
+    overall_accuracy: Optional[float]  # % (None if closed_picks == 0)
+    bull_accuracy: Optional[float]  # % of BUY picks beating SPY
+    bear_accuracy: Optional[float]  # % of SELL picks beating SPY
+    avg_confidence: float  # 0-100
+    avg_score: float  # 0-100
+    confidence_calibration: float  # |avg_confidence - overall_accuracy|
     error_flag_frequency: dict[str, int] = Field(default_factory=dict)
-    directional_bias: str = ""              # "bullish" | "bearish" | "balanced"
+    directional_bias: str = ""  # "bullish" | "bearish" | "balanced"
     sector_concentration: dict[str, int] = Field(default_factory=dict)
     average_return_when_correct: Optional[float] = None
     average_return_when_wrong: Optional[float] = None
     disclosure_citation_rate: Optional[float] = None
     # P1-08c: confidence calibration bins
-    high_confidence_accuracy: Optional[float] = None   # picks with confidence >= 70
-    medium_confidence_accuracy: Optional[float] = None  # picks with 40 <= confidence < 70
-    low_confidence_accuracy: Optional[float] = None    # picks with confidence < 40
+    high_confidence_accuracy: Optional[float] = None  # picks with confidence >= 70
+    medium_confidence_accuracy: Optional[float] = (
+        None  # picks with 40 <= confidence < 70
+    )
+    low_confidence_accuracy: Optional[float] = None  # picks with confidence < 40
 
 
 class RubricDefinition(BaseModel):
@@ -165,8 +167,12 @@ class RubricDefinition(BaseModel):
     poor_timing_threshold: int = 40
     sentiment_bias_words: list[str] = Field(
         default_factory=lambda: [
-            "sure", "guaranteed", "obvious", "can't go wrong",
-            "definitely", "will definitely",
+            "sure",
+            "guaranteed",
+            "obvious",
+            "can't go wrong",
+            "definitely",
+            "will definitely",
         ]
     )
     error_flags_schema: dict = Field(
@@ -185,11 +191,11 @@ class RubricDefinition(BaseModel):
     @model_validator(mode="after")
     def validate_weights_sum(self) -> "RubricDefinition":
         total = (
-            self.accuracy_weight + self.confidence_alignment_weight
-            + self.timing_quality_weight + self.risk_management_weight
+            self.accuracy_weight
+            + self.confidence_alignment_weight
+            + self.timing_quality_weight
+            + self.risk_management_weight
         )
         if total != 100:
-            raise ValueError(
-                f"Rubric weights must sum to 100, got {total}"
-            )
+            raise ValueError(f"Rubric weights must sum to 100, got {total}")
         return self

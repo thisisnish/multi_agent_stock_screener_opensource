@@ -28,7 +28,9 @@ def _skipped() -> dict:
     return {VALUE_KEY: None, "skipped": True}
 
 
-def _make_sector(symbols: list[str], values: list[float], sector: str) -> tuple[dict, dict]:
+def _make_sector(
+    symbols: list[str], values: list[float], sector: str
+) -> tuple[dict, dict]:
     """Return (signals, sector_map) for a set of symbols with given values."""
     signals = {sym: _signal(val) for sym, val in zip(symbols, values)}
     sector_map = {sym: sector for sym in symbols}
@@ -45,6 +47,7 @@ def _min_sector(base_value: float = 0.05, sector: str = SECTOR_A) -> tuple[dict,
 # ---------------------------------------------------------------------------
 # Basic scoring
 # ---------------------------------------------------------------------------
+
 
 class TestBasicScoring:
     def test_median_ticker_scores_near_50(self):
@@ -89,6 +92,7 @@ class TestBasicScoring:
 # ---------------------------------------------------------------------------
 # Degenerate sector cases
 # ---------------------------------------------------------------------------
+
 
 class TestDegenerateSectors:
     def test_std_zero_all_none(self):
@@ -137,6 +141,7 @@ class TestDegenerateSectors:
 # Cross-sector isolation
 # ---------------------------------------------------------------------------
 
+
 class TestCrossSectorIsolation:
     def test_sectors_scored_independently(self):
         """Two sectors with same absolute values → same relative scores within each sector."""
@@ -163,6 +168,7 @@ class TestCrossSectorIsolation:
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     def test_missing_sector_map_entry_returns_none(self):

@@ -410,7 +410,7 @@ class TestGetStorageDAOFactory:
             "screener.lib.storage.firestore.firestore.AsyncClient",
             return_value=MagicMock(),
         ) as mock_async_client:
-            dao = get_storage_dao(cfg)
+            get_storage_dao(cfg)
 
         mock_async_client.assert_called_once_with(
             project="test-project",

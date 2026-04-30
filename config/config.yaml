@@ -1,0 +1,117 @@
+# ---------------------------------------------------------------------------
+# Multi-Agent Stock Screener — Runtime Configuration
+#
+# All secrets (API keys, credentials) must be set as environment variables
+# (see .env.example).  Values written as ${VAR_NAME} are resolved at startup
+# from the process environment — never put real secrets in this file.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# LLM settings
+# ---------------------------------------------------------------------------
+llm:
+  # Default model used by every agent that does not have an explicit override.
+  # Format: "provider:model_id"
+  # Supported providers: anthropic | openai | google_genai | groq | ollama
+  model: "anthropic:claude-haiku-4-5-20251001"
+
+  # Per-agent overrides.  Set to null to inherit the default model above.
+  bull_model: null
+  bear_model: null
+  judge_model: null
+  news_model: null
+
+  # Narrator produces the plain-English email copy — Flash is fast and cheap.
+  narrator_model: "google_genai:gemini-2.0-flash"
+
+  # Embedding model used for EDGAR 10-K/10-Q vector indexing.
+  # Must produce 3072-dimensional vectors to match the Firestore native index.
+  embedder_model: "google_genai:models/gemini-embedding-001"
+
+# ---------------------------------------------------------------------------
+# Storage backend
+# ---------------------------------------------------------------------------
+storage:
+  # Which backend to use: firestore | s3 | opensearch
+  provider: "firestore"
+
+  firestore:
+    # GCP project that hosts the Firestore database.
+    project_id: "${GCP_PROJECT_ID}"
+    # Single logical database — do not change this value.
+    database: "multi-agent-stock-screener"
+
+  s3:
+    # Used when provider = "s3".  Brute-force cosine search is viable at
+    # S&P 500 scale (~10 k EDGAR chunks).
+    bucket: "${S3_BUCKET_NAME}"
+    region: "us-east-1"
+
+  opensearch:
+    # Used when provider = "opensearch".  Requires the k-NN plugin.
+    host: "${OPENSEARCH_HOST}"
+    port: 9200
+    index: "stock-screener-chunks"
+
+# ---------------------------------------------------------------------------
+# Signal weights
+# Weights must sum to 1.0.  Changing these alters the composite score formula:
+#   composite = technical*w_technical + earnings*w_earnings
+#               + fcf*w_fcf + ebitda*w_ebitda
+# Applied *before* the MA200 gate multiplier.
+# ---------------------------------------------------------------------------
+signals:
+  weights:
+    technical: 0.20   # RSI, MA50/200 cross, volume, momentum
+    earnings:  0.30   # Earnings yield (E/P)
+    fcf:       0.30   # Free-cash-flow yield
+    ebitda:    0.20   # EBITDA / EV
+
+# ---------------------------------------------------------------------------
+# Screener settings
+# ---------------------------------------------------------------------------
+screener:
+  # Number of top-scoring tickers to pass to the multi-agent debate.
+  top_n: 10
+
+  # Hard cap on how many picks can come from the same GICS sector.
+  max_picks_per_sector: 3
+
+# ---------------------------------------------------------------------------
+# Notifications
+# ---------------------------------------------------------------------------
+notifications:
+  email:
+    # Set enabled: false to suppress all outbound email (useful for dry runs).
+    enabled: true
+
+    # Resend sender address.  Must be a verified domain in your Resend account.
+    from_address: "screener@yourdomain.com"
+
+    # List of recipient email addresses.
+    recipients:
+      - "you@example.com"
+
+    # Subject prefix for monthly reports.
+    subject_prefix: "[Stock Screener]"
+
+# ---------------------------------------------------------------------------
+# EDGAR settings
+# ---------------------------------------------------------------------------
+edgar:
+  # Minimum age (days) of an existing 10-K/10-Q index before re-fetching.
+  # Set to 0 to always re-index on every run.
+  freshness_days: 30
+
+  # Chunk size in tokens for splitting EDGAR filing text.
+  chunk_size: 512
+
+  # Overlap between consecutive chunks expressed as a fraction of chunk_size.
+  # 0.10 = 10 % overlap (≈51 tokens).
+  chunk_overlap: 0.10
+
+  # Minimum cosine similarity for a retrieved chunk to be included in context.
+  similarity_threshold: 0.7
+
+  # Maximum number of chunks injected per ticker per debate.
+  top_k: 5

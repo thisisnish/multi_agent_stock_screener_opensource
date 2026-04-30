@@ -244,8 +244,8 @@ class TestGetAgentLlm:
 
     def test_unknown_agent_raises_llm_config_error(self):
         app_cfg = _make_app_config(model="anthropic:claude-haiku-4-5-20251001")
-        with pytest.raises(LLMConfigError, match="news"):
-            get_agent_llm("news", app_cfg)
+        with pytest.raises(LLMConfigError, match="foobar"):
+            get_agent_llm("foobar", app_cfg)
 
     def test_unknown_agent_error_lists_known_agents(self):
         app_cfg = _make_app_config(model="anthropic:claude-haiku-4-5-20251001")

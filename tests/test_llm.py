@@ -52,9 +52,7 @@ def _make_app_config(**llm_kwargs) -> AppConfig:
         provider="firestore",
         firestore=FirestoreConfig(project_id="test-project"),
     )
-    notifications = NotificationsConfig(
-        email=EmailConfig(enabled=False, recipients=[])
-    )
+    notifications = NotificationsConfig(email=EmailConfig(enabled=False, recipients=[]))
     return AppConfig(
         llm=llm,
         storage=storage,
@@ -105,7 +103,9 @@ class TestInitChatModelProviderRouting:
     """Each provider must route to the correct LangChain class constructor."""
 
     def _make_cfg(self, provider: str, model_id: str = "some-model") -> ModelConfig:
-        return ModelConfig(provider=provider, model_id=model_id, raw=f"{provider}:{model_id}")
+        return ModelConfig(
+            provider=provider, model_id=model_id, raw=f"{provider}:{model_id}"
+        )
 
     def test_anthropic_routes_to_chat_anthropic(self):
         mock_cls = MagicMock()
@@ -272,7 +272,9 @@ class TestGetStructuredLlm:
 
         app_cfg = _make_app_config(model="anthropic:claude-haiku-4-5-20251001")
 
-        with patch("screener.lib.agent_creator.get_agent_llm", return_value=fake_llm) as mock_get:
+        with patch(
+            "screener.lib.agent_creator.get_agent_llm", return_value=fake_llm
+        ) as mock_get:
             result = get_structured_llm("bull", SampleSchema, app_cfg)
 
         # get_agent_llm was called with the right arguments

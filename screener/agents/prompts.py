@@ -20,6 +20,7 @@ build_disclosure_block(chunks) -> str | None
 from __future__ import annotations
 
 import json
+
 # Minimum months of history before adaptive weighting is applied in the Judge prompt.
 SCORING_MIN_SAMPLE: int = 4
 
@@ -170,9 +171,7 @@ def build_ticker_context(
             "",
         ]
 
-    lines.append(
-        "Make the strongest possible case for your side using the data above."
-    )
+    lines.append("Make the strongest possible case for your side using the data above.")
 
     return "\n".join(lines)
 
@@ -236,11 +235,7 @@ def build_judge_context(
         ]
 
     # Adaptive weighting block — only shown when there's enough history
-    if (
-        prior_months
-        and len(prior_months) >= SCORING_MIN_SAMPLE
-        and scoring_weights
-    ):
+    if prior_months and len(prior_months) >= SCORING_MIN_SAMPLE and scoring_weights:
         bull_w = scoring_weights.get("bull_weight", 0.5)
         bear_w = scoring_weights.get("bear_weight", 0.5)
         sample_n = scoring_weights.get("sample_size", 0)

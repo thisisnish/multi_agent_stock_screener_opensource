@@ -50,7 +50,9 @@ async def get_disclosure_chunks_async(
     query = f"SEC filing risk factors financial performance {ticker}"
     try:
         embedding: list[float] = await asyncio.to_thread(embedder.embed_query, query)
-        chunks = await dao.vector_search(CHUNKS, embedding, top_k=top_k, threshold=threshold)
+        chunks = await dao.vector_search(
+            CHUNKS, embedding, top_k=top_k, threshold=threshold
+        )
         logger.debug(
             "EDGAR retrieval for %s: %d chunks above threshold %.2f",
             ticker,

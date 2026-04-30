@@ -93,9 +93,7 @@ class ModelConfig:
 # Supported providers
 # ---------------------------------------------------------------------------
 
-_KNOWN_PROVIDERS = frozenset(
-    {"anthropic", "openai", "google_genai", "groq", "ollama"}
-)
+_KNOWN_PROVIDERS = frozenset({"anthropic", "openai", "google_genai", "groq", "ollama"})
 
 
 # ---------------------------------------------------------------------------

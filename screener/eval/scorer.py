@@ -146,8 +146,7 @@ def score_judge_pick(
 
     # Detect sentiment bias words in rationale
     bias_hits = [
-        w for w in rubric.sentiment_bias_words
-        if w.lower() in rationale.lower()
+        w for w in rubric.sentiment_bias_words if w.lower() in rationale.lower()
     ]
 
     system_prompt = f"""\
@@ -164,7 +163,7 @@ Overconfidence threshold: {rubric.overconfidence_threshold} pts above actual acc
 Poor timing threshold: entry/exit within {rubric.poor_timing_threshold}% of optimal.
 
 Error flags to detect (report any that apply):
-{chr(10).join(f'  {k}: {v}' for k, v in rubric.error_flags_schema.items())}
+{chr(10).join(f"  {k}: {v}" for k, v in rubric.error_flags_schema.items())}
 
 Return a ScoreResult with integer scores 0–100 and a list of triggered error_flags.
 """
@@ -176,9 +175,15 @@ Return a ScoreResult with integer scores 0–100 and a list of triggered error_f
             outcome_block += f"  spy_return_pct:   {spy_return:.2f}%\n"
             outcome_block += f"  beat_spy:         {beat_spy}\n"
     elif current_price is not None:
-        unrealised = round((current_price - entry_price) / entry_price * 100, 2) if entry_price else None
+        unrealised = (
+            round((current_price - entry_price) / entry_price * 100, 2)
+            if entry_price
+            else None
+        )
         if unrealised is not None:
-            outcome_block = f"  unrealised_return_pct: {unrealised:.2f}% (position still open)\n"
+            outcome_block = (
+                f"  unrealised_return_pct: {unrealised:.2f}% (position still open)\n"
+            )
 
     eval_prompt = f"""\
 Pick to evaluate:
@@ -186,11 +191,11 @@ Pick to evaluate:
   decision:     {decision}
   entry_date:   {entry_date}
   entry_price:  {entry_price}
-  exit_date:    {exit_date or 'still open'}
-  exit_price:   {exit_price or 'N/A'}
+  exit_date:    {exit_date or "still open"}
+  exit_price:   {exit_price or "N/A"}
   confidence:   {confidence:.1f} / 100
 {outcome_block}
-Sentiment bias words detected in rationale: {bias_hits or 'none'}
+Sentiment bias words detected in rationale: {bias_hits or "none"}
 
 Judge rationale:
 {rationale}

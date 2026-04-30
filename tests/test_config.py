@@ -172,7 +172,7 @@ def test_load_config_empty_yaml_uses_defaults(tmp_path):
 
 def test_load_config_unresolved_env_var_raises(tmp_path):
     os.environ.pop("MISSING_VAR_XYZ", None)
-    p = write_yaml(tmp_path, "storage:\n  provider: \"${MISSING_VAR_XYZ}\"\n")
+    p = write_yaml(tmp_path, 'storage:\n  provider: "${MISSING_VAR_XYZ}"\n')
     with pytest.raises(ConfigError, match="MISSING_VAR_XYZ"):
         load_config(p)
 

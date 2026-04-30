@@ -53,9 +53,7 @@ def _parse_month_id(month_id: str) -> tuple[int, int]:
     try:
         dt = datetime.strptime(month_id, "%Y-%m")
     except ValueError:
-        raise ValueError(
-            f"month_id must be in YYYY-MM format, got: {month_id!r}"
-        )
+        raise ValueError(f"month_id must be in YYYY-MM format, got: {month_id!r}")
     return dt.year, dt.month
 
 

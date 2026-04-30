@@ -112,7 +112,9 @@ def compute_metrics(
     # Overall accuracy
     overall_accuracy: float | None = None
     if closed:
-        overall_accuracy = round(sum(1 for r in closed if r.accuracy) / len(closed) * 100, 1)
+        overall_accuracy = round(
+            sum(1 for r in closed if r.accuracy) / len(closed) * 100, 1
+        )
 
     # Bull accuracy (BUY picks that beat SPY)
     bull_results = [r for r in closed if r.bull_accuracy is not None]
@@ -167,11 +169,13 @@ def compute_metrics(
                         wrong_returns.append(ret)
             avg_return_correct = (
                 round(sum(correct_returns) / len(correct_returns), 2)
-                if correct_returns else None
+                if correct_returns
+                else None
             )
             avg_return_wrong = (
                 round(sum(wrong_returns) / len(wrong_returns), 2)
-                if wrong_returns else None
+                if wrong_returns
+                else None
             )
 
     # Confidence bins from raw picks
@@ -242,7 +246,10 @@ def detect_systematic_issues(metrics: EvalMetrics) -> list[str]:
 
     # Overconfidence
     if metrics.overall_accuracy is not None:
-        if metrics.avg_confidence - metrics.overall_accuracy >= _OVERCONFIDENCE_THRESHOLD:
+        if (
+            metrics.avg_confidence - metrics.overall_accuracy
+            >= _OVERCONFIDENCE_THRESHOLD
+        ):
             issues.append(
                 f"Overconfidence: avg confidence {metrics.avg_confidence:.1f} "
                 f"vs accuracy {metrics.overall_accuracy:.1f}% "
@@ -308,11 +315,14 @@ def format_metrics_report(metrics: EvalMetrics) -> str:
         f"  Open:               {metrics.open_picks}",
         "",
         f"Overall accuracy:     {metrics.overall_accuracy:.1f}%"
-        if metrics.overall_accuracy is not None else "Overall accuracy:     N/A (no closed picks)",
+        if metrics.overall_accuracy is not None
+        else "Overall accuracy:     N/A (no closed picks)",
         f"Bull accuracy:        {metrics.bull_accuracy:.1f}%"
-        if metrics.bull_accuracy is not None else "Bull accuracy:        N/A",
+        if metrics.bull_accuracy is not None
+        else "Bull accuracy:        N/A",
         f"Bear accuracy:        {metrics.bear_accuracy:.1f}%"
-        if metrics.bear_accuracy is not None else "Bear accuracy:        N/A",
+        if metrics.bear_accuracy is not None
+        else "Bear accuracy:        N/A",
         "",
         f"Avg score:            {metrics.avg_score:.1f} / 100",
         f"Avg confidence:       {metrics.avg_confidence:.1f} / 100",
@@ -320,16 +330,22 @@ def format_metrics_report(metrics: EvalMetrics) -> str:
         f"Directional bias:     {metrics.directional_bias or 'balanced'}",
     ]
 
-    if metrics.high_confidence_accuracy is not None or metrics.medium_confidence_accuracy is not None:
+    if (
+        metrics.high_confidence_accuracy is not None
+        or metrics.medium_confidence_accuracy is not None
+    ):
         lines += [
             "",
             "Confidence bins:",
             f"  High (>=70):        {metrics.high_confidence_accuracy:.1f}%"
-            if metrics.high_confidence_accuracy is not None else "  High (>=70):        N/A",
+            if metrics.high_confidence_accuracy is not None
+            else "  High (>=70):        N/A",
             f"  Medium (40-69):     {metrics.medium_confidence_accuracy:.1f}%"
-            if metrics.medium_confidence_accuracy is not None else "  Medium (40-69):     N/A",
+            if metrics.medium_confidence_accuracy is not None
+            else "  Medium (40-69):     N/A",
             f"  Low (<40):          {metrics.low_confidence_accuracy:.1f}%"
-            if metrics.low_confidence_accuracy is not None else "  Low (<40):          N/A",
+            if metrics.low_confidence_accuracy is not None
+            else "  Low (<40):          N/A",
         ]
 
     if metrics.disclosure_citation_rate is not None:
@@ -403,9 +419,7 @@ def compute_acid_test(picks: list[dict]) -> dict:
     for label, data in tiers.items():
         outcomes: list[bool] = data["picks"]
         returns: list[float] = data["returns"]
-        accuracy = (
-            round(sum(outcomes) / len(outcomes) * 100, 1) if outcomes else None
-        )
+        accuracy = round(sum(outcomes) / len(outcomes) * 100, 1) if outcomes else None
         max_drawdown: float | None = None
         avg_return: float | None = None
         if returns:

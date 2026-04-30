@@ -212,9 +212,7 @@ def make_debate_node(app_config: "AppConfig"):
             bull=bull_llm,
             bear=bear_llm,
         )
-        outputs = await parallel.ainvoke(
-            {"bull": bull_messages, "bear": bear_messages}
-        )
+        outputs = await parallel.ainvoke({"bull": bull_messages, "bear": bear_messages})
 
         logger.debug(
             "Debate complete for ticker=%s: bull_citations=%s bear_citations=%s",
@@ -251,9 +249,7 @@ def conviction_node(state: DebateState) -> dict:
     bull_conv = score_conviction(state["bull_output"], "bull")
     bear_conv = score_conviction(state["bear_output"], "bear")
 
-    logger.debug(
-        "Conviction scores: bull=%.1f bear=%.1f", bull_conv, bear_conv
-    )
+    logger.debug("Conviction scores: bull=%.1f bear=%.1f", bull_conv, bear_conv)
 
     return {"bull_conviction": bull_conv, "bear_conviction": bear_conv}
 
@@ -391,9 +387,7 @@ def hard_rules(state: DebateState) -> dict:
     confidence = state.get("confidence_score", 50.0)
 
     if confidence < 40.0:
-        logger.debug(
-            "hard_rules: forcing HOLD (confidence=%.1f < 40)", confidence
-        )
+        logger.debug("hard_rules: forcing HOLD (confidence=%.1f < 40)", confidence)
         return {"final_action": "HOLD", "horizon": "30d"}
 
     horizon = _assign_horizon(confidence)

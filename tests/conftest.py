@@ -2,6 +2,7 @@
 tests/conftest.py — Adds the project root to sys.path so that `screener`
 is importable without a package install.
 """
+
 import sys
 from pathlib import Path
 

@@ -1,0 +1,30 @@
+# Multi-Agent Stock Screener — Python dependencies
+#
+# Install with:
+#   pip install -r requirements.txt
+#
+# All LangChain provider packages are pinned to minor versions to avoid
+# unexpected breaking changes; update deliberately.
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+pydantic>=2.0,<3.0
+pyyaml>=6.0
+python-dotenv>=1.0
+
+# ---------------------------------------------------------------------------
+# LLM — core + provider integrations
+# ---------------------------------------------------------------------------
+langchain>=0.3,<0.4
+langchain-anthropic>=0.3,<0.4
+langchain-openai>=0.3,<0.4
+langchain-google-genai>=2.0,<3.0
+langchain-groq>=0.2,<0.3
+langchain-ollama>=0.2,<0.3
+
+# ---------------------------------------------------------------------------
+# Testing
+# ---------------------------------------------------------------------------
+pytest>=8.0
+pytest-mock>=3.0

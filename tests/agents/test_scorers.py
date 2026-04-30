@@ -10,8 +10,6 @@ Tests cover:
 - contested_truth: conviction gap detection
 """
 
-import pytest
-
 from screener.agents.nodes import hard_rules
 from screener.agents.state import DebateState
 from screener.lib.models import BearCaseOutput, BullCaseOutput, JudgeOutput

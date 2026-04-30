@@ -7,8 +7,6 @@ without invoking any real LLM calls or making any I/O to Firestore.
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from screener.agents.graph import build_debate_graph
 from screener.lib.config_loader import (
     AppConfig,

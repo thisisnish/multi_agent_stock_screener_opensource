@@ -167,6 +167,7 @@ _AGENT_OVERRIDE_ATTR: dict[str, str] = {
     "bull": "bull_model",
     "bear": "bear_model",
     "judge": "judge_model",
+    "news": "news_model",
     "narrator": "narrator_model",
     "embedder": "embedder_model",
 }

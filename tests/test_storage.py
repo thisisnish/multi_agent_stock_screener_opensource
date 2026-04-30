@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from screener.lib.config import (
+from screener.lib.config_loader import (
     AppConfig,
     EdgarConfig,
     EmailConfig,

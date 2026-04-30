@@ -1,5 +1,5 @@
 """
-tests/test_llm.py — Unit tests for screener/lib/llm.py
+tests/test_llm.py — Unit tests for screener/lib/agent_creator.py
 
 Covers:
 - ModelConfig.from_string: happy path and malformed string
@@ -20,8 +20,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import BaseModel
 
-from screener.lib.config import AppConfig, LLMConfig
-from screener.lib.llm import (
+from screener.lib.config_loader import AppConfig, LLMConfig
+from screener.lib.agent_creator import (
     LLMConfigError,
     ModelConfig,
     get_agent_llm,
@@ -37,7 +37,7 @@ from screener.lib.llm import (
 
 def _make_app_config(**llm_kwargs) -> AppConfig:
     """Build a minimal AppConfig wired to a firestore backend with email off."""
-    from screener.lib.config import (
+    from screener.lib.config_loader import (
         EdgarConfig,
         EmailConfig,
         FirestoreConfig,
@@ -166,7 +166,7 @@ class TestGetAgentLlm:
 
     def _patch_init(self):
         """Return a patcher for init_chat_model at its import location."""
-        return patch("screener.lib.llm.init_chat_model")
+        return patch("screener.lib.agent_creator.init_chat_model")
 
     def test_bull_override_used_when_set(self):
         app_cfg = _make_app_config(
@@ -272,7 +272,7 @@ class TestGetStructuredLlm:
 
         app_cfg = _make_app_config(model="anthropic:claude-haiku-4-5-20251001")
 
-        with patch("screener.lib.llm.get_agent_llm", return_value=fake_llm) as mock_get:
+        with patch("screener.lib.agent_creator.get_agent_llm", return_value=fake_llm) as mock_get:
             result = get_structured_llm("bull", SampleSchema, app_cfg)
 
         # get_agent_llm was called with the right arguments
@@ -292,7 +292,7 @@ class TestGetStructuredLlm:
 
         app_cfg = _make_app_config(model="anthropic:claude-haiku-4-5-20251001")
 
-        with patch("screener.lib.llm.get_agent_llm", return_value=fake_llm):
+        with patch("screener.lib.agent_creator.get_agent_llm", return_value=fake_llm):
             result = get_structured_llm("judge", SampleSchema, app_cfg)
 
         assert result is sentinel

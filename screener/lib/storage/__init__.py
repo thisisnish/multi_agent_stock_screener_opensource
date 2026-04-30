@@ -4,7 +4,7 @@ screener/lib/storage/__init__.py — Public API for the storage package.
 Factory function::
 
     from screener.lib.storage import get_storage_dao
-    from screener.lib.config import AppConfig
+    from screener.lib.config_loader import AppConfig
 
     dao = get_storage_dao(cfg)          # returns a StorageDAO
     doc = await dao.get("tickers", "AAPL")
@@ -16,7 +16,7 @@ giving a clear failure message rather than a cryptic AttributeError later.
 
 from __future__ import annotations
 
-from screener.lib.config import AppConfig
+from screener.lib.config_loader import AppConfig
 from screener.lib.storage.base import StorageDAO
 
 

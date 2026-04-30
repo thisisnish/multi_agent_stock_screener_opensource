@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class BullCaseOutput(BaseModel):
@@ -112,3 +112,84 @@ class NewsSentimentOutput(BaseModel):
     rationale: str  # max 300 chars
     override_flag: bool
     override_reason: str  # populated if override_flag=True, else ""
+
+
+class ScoreResult(BaseModel):
+    """Rubric-scored result for a single judge pick."""
+
+    score: int = Field(ge=0, le=100)
+    accuracy: Optional[bool]            # True=beat SPY, False=underperformed, None=no outcome
+    confidence_alignment: int = Field(ge=0, le=100)
+    timing_quality: int = Field(ge=0, le=100)
+    risk_management: int = Field(ge=0, le=100)
+    error_flags: list[str]
+    rationale: str
+    bull_accuracy: Optional[bool] = None   # True if BUY and beat SPY
+    bear_accuracy: Optional[bool] = None   # True if SELL and beat SPY
+
+
+class EvalMetrics(BaseModel):
+    """Aggregated quality metrics for a month of judge picks."""
+
+    period: str                             # "YYYY-MM"
+    total_picks: int
+    closed_picks: int
+    open_picks: int
+    overall_accuracy: Optional[float]       # % (None if closed_picks == 0)
+    bull_accuracy: Optional[float]          # % of BUY picks beating SPY
+    bear_accuracy: Optional[float]          # % of SELL picks beating SPY
+    avg_confidence: float                   # 0-100
+    avg_score: float                        # 0-100
+    confidence_calibration: float           # |avg_confidence - overall_accuracy|
+    error_flag_frequency: dict[str, int] = Field(default_factory=dict)
+    directional_bias: str = ""              # "bullish" | "bearish" | "balanced"
+    sector_concentration: dict[str, int] = Field(default_factory=dict)
+    average_return_when_correct: Optional[float] = None
+    average_return_when_wrong: Optional[float] = None
+    disclosure_citation_rate: Optional[float] = None
+    # P1-08c: confidence calibration bins
+    high_confidence_accuracy: Optional[float] = None   # picks with confidence >= 70
+    medium_confidence_accuracy: Optional[float] = None  # picks with 40 <= confidence < 70
+    low_confidence_accuracy: Optional[float] = None    # picks with confidence < 40
+
+
+class RubricDefinition(BaseModel):
+    """Evaluation rubric weights and thresholds."""
+
+    name: str = "default_v1"
+    accuracy_weight: int = 40
+    confidence_alignment_weight: int = 30
+    timing_quality_weight: int = 15
+    risk_management_weight: int = 15
+    overconfidence_threshold: int = 20
+    poor_timing_threshold: int = 40
+    sentiment_bias_words: list[str] = Field(
+        default_factory=lambda: [
+            "sure", "guaranteed", "obvious", "can't go wrong",
+            "definitely", "will definitely",
+        ]
+    )
+    error_flags_schema: dict = Field(
+        default_factory=lambda: {
+            "overconfidence": "Confidence significantly exceeded actual outcome",
+            "poor_timing": "Correct direction but bad entry/exit prices",
+            "sentiment_bias": "Rationale shows emotional bias",
+            "no_risk_management": "No mentioned stop-loss or position sizing",
+            "insufficient_rationale": "Weak or missing fundamental reasoning",
+            "wrong_direction": "Pick moved opposite to stated direction",
+            "narrow_target": "Price target too narrow relative to volatility",
+            "sector_crowding": "Pick clustered with other concurrent picks in same sector",
+        }
+    )
+
+    @model_validator(mode="after")
+    def validate_weights_sum(self) -> "RubricDefinition":
+        total = (
+            self.accuracy_weight + self.confidence_alignment_weight
+            + self.timing_quality_weight + self.risk_management_weight
+        )
+        if total != 100:
+            raise ValueError(
+                f"Rubric weights must sum to 100, got {total}"
+            )
+        return self

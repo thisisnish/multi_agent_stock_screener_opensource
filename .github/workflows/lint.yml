@@ -9,6 +9,9 @@ on:
 jobs:
   ruff:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        check: [lint, format]
     steps:
       - uses: actions/checkout@v4
 
@@ -20,5 +23,10 @@ jobs:
       - name: Install Ruff
         run: pip install ruff
 
-      - name: Run Ruff
+      - name: Run Ruff lint
+        if: matrix.check == 'lint'
         run: ruff check .
+
+      - name: Run Ruff format check
+        if: matrix.check == 'format'
+        run: ruff format --check .

@@ -133,28 +133,28 @@ def test_is_fresh_missing_doc():
     """_is_fresh returns False when the sentinel doc does not exist."""
     dao = _mock_dao(sentinel_doc=None)
     retriever = _make_retriever(_stub_config(), dao)
-    assert retriever._is_fresh("aapl") is False
+    assert asyncio.run(retriever._is_fresh("aapl")) is False
 
 
 def test_is_fresh_recent_sentinel():
     """_is_fresh returns True when indexed_at is within the freshness window."""
     dao = _mock_dao(sentinel_doc=_fresh_sentinel())
     retriever = _make_retriever(_stub_config(freshness_days=30), dao)
-    assert retriever._is_fresh("aapl") is True
+    assert asyncio.run(retriever._is_fresh("aapl")) is True
 
 
 def test_is_fresh_stale_sentinel():
     """_is_fresh returns False when indexed_at is outside the freshness window."""
     dao = _mock_dao(sentinel_doc=_stale_sentinel(freshness_days=30))
     retriever = _make_retriever(_stub_config(freshness_days=30), dao)
-    assert retriever._is_fresh("aapl") is False
+    assert asyncio.run(retriever._is_fresh("aapl")) is False
 
 
 def test_is_fresh_missing_indexed_at_field():
     """_is_fresh returns False when the sentinel doc exists but has no indexed_at."""
     dao = _mock_dao(sentinel_doc={"some_other_field": "value"})
     retriever = _make_retriever(_stub_config(), dao)
-    assert retriever._is_fresh("aapl") is False
+    assert asyncio.run(retriever._is_fresh("aapl")) is False
 
 
 # ---------------------------------------------------------------------------
@@ -166,10 +166,10 @@ def test_index_ticker_skips_fresh(monkeypatch):
     """index_ticker returns 0 and makes no fetch call when index is fresh."""
     dao = _mock_dao(sentinel_doc=_fresh_sentinel())
     retriever = _make_retriever(_stub_config(), dao)
+    retriever._is_fresh = AsyncMock(return_value=True)
 
-    with patch("screener.edgar.retriever.EDGARRetriever._is_fresh", return_value=True):
-        with patch("screener.edgar.fetcher.get_filing_chunks") as mock_fetch:
-            result = retriever.index_ticker("AAPL", dry_run=False)
+    with patch("screener.edgar.fetcher.get_filing_chunks") as mock_fetch:
+        result = asyncio.run(retriever.index_ticker("AAPL", dry_run=False))
 
     assert result == 0
     mock_fetch.assert_not_called()
@@ -180,34 +180,16 @@ def test_index_ticker_no_chunks_produced(monkeypatch):
     """index_ticker returns 0 when EDGAR produces no chunks for the ticker."""
     dao = _mock_dao(sentinel_doc=None)  # stale → will proceed
     retriever = _make_retriever(_stub_config(), dao)
+    retriever._is_fresh = AsyncMock(return_value=False)
 
-    with patch(
-        "screener.edgar.retriever.EDGARRetriever._is_fresh", return_value=False
-    ):
-        with patch(
-            "screener.edgar.fetcher.get_filing_chunks", return_value=[]
-        ) as mock_fetch:
-            # We need to patch the import inside index_ticker
-            with patch(
-                "screener.edgar.retriever.EDGARRetriever.index_ticker",
-                wraps=retriever.index_ticker,
-            ):
-                pass
+    import screener.edgar.fetcher as fetcher_mod
 
-    # Direct approach: patch the fetcher module imported inside index_ticker
-    with patch("screener.edgar.retriever.EDGARRetriever._is_fresh", return_value=False):
-        with patch(
-            "screener.edgar.fetcher.get_filing_chunks",
-            return_value=[],
-        ):
-            import screener.edgar.fetcher as fetcher_mod
-
-            original_get = fetcher_mod.get_filing_chunks
-            fetcher_mod.get_filing_chunks = lambda *a, **kw: []
-            try:
-                result = retriever.index_ticker("ZZZZ", dry_run=False)
-            finally:
-                fetcher_mod.get_filing_chunks = original_get
+    original_get = fetcher_mod.get_filing_chunks
+    fetcher_mod.get_filing_chunks = lambda *a, **kw: []
+    try:
+        result = asyncio.run(retriever.index_ticker("ZZZZ", dry_run=False))
+    finally:
+        fetcher_mod.get_filing_chunks = original_get
 
     assert result == 0
     dao.set.assert_not_called()
@@ -217,6 +199,7 @@ def test_index_ticker_dry_run(monkeypatch):
     """dry_run=True skips all storage writes and returns 0."""
     dao = _mock_dao(sentinel_doc=None)
     retriever = _make_retriever(_stub_config(), dao)
+    retriever._is_fresh = AsyncMock(return_value=False)
 
     chunks = _sample_chunks(3)
 
@@ -225,10 +208,7 @@ def test_index_ticker_dry_run(monkeypatch):
     original_get = fetcher_mod.get_filing_chunks
     fetcher_mod.get_filing_chunks = lambda *a, **kw: chunks
     try:
-        with patch(
-            "screener.edgar.retriever.EDGARRetriever._is_fresh", return_value=False
-        ):
-            result = retriever.index_ticker("AAPL", dry_run=True)
+        result = asyncio.run(retriever.index_ticker("AAPL", dry_run=True))
     finally:
         fetcher_mod.get_filing_chunks = original_get
 
@@ -245,6 +225,7 @@ def test_index_ticker_writes_chunks_and_sentinel():
     """Full run writes all chunks + the freshness sentinel to the DAO."""
     dao = _mock_dao(sentinel_doc=None)
     retriever = _make_retriever(_stub_config(), dao)
+    retriever._is_fresh = AsyncMock(return_value=False)
 
     chunks = _sample_chunks(3)
 
@@ -253,10 +234,7 @@ def test_index_ticker_writes_chunks_and_sentinel():
     original_get = fetcher_mod.get_filing_chunks
     fetcher_mod.get_filing_chunks = lambda *a, **kw: chunks
     try:
-        with patch(
-            "screener.edgar.retriever.EDGARRetriever._is_fresh", return_value=False
-        ):
-            result = retriever.index_ticker("AAPL", dry_run=False)
+        result = asyncio.run(retriever.index_ticker("AAPL", dry_run=False))
     finally:
         fetcher_mod.get_filing_chunks = original_get
 
@@ -276,6 +254,7 @@ def test_index_ticker_chunk_doc_ids_are_deterministic():
     """Chunk doc IDs follow the expected {slug}_{form}_{period}_{index:04d} pattern."""
     dao = _mock_dao(sentinel_doc=None)
     retriever = _make_retriever(_stub_config(), dao)
+    retriever._is_fresh = AsyncMock(return_value=False)
 
     chunks = _sample_chunks(2)  # chunk_index 0 and 1
 
@@ -284,10 +263,7 @@ def test_index_ticker_chunk_doc_ids_are_deterministic():
     original_get = fetcher_mod.get_filing_chunks
     fetcher_mod.get_filing_chunks = lambda *a, **kw: chunks
     try:
-        with patch(
-            "screener.edgar.retriever.EDGARRetriever._is_fresh", return_value=False
-        ):
-            retriever.index_ticker("AAPL", dry_run=False)
+        asyncio.run(retriever.index_ticker("AAPL", dry_run=False))
     finally:
         fetcher_mod.get_filing_chunks = original_get
 

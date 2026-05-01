@@ -18,6 +18,7 @@ All API keys are injected from Secret Manager (see deploy/deploy_all.sh).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -49,6 +50,38 @@ def _download_configs_from_gcs(bucket_name: str) -> tuple[str, str]:
     logger.info("downloaded gs://%s/tickers.yaml → %s", bucket_name, tickers_path)
 
     return config_path, tickers_path
+
+
+async def _run_indexing(retriever, tickers: list[str], dry_run: bool) -> tuple[int, int]:
+    """Await ``retriever.index_ticker`` for each ticker inside a single event loop.
+
+    Using a single ``asyncio.run()`` call (in ``main``) and awaiting each ticker
+    here avoids the ``RuntimeError: Event loop is closed`` bug that occurs when
+    ``asyncio.run()`` is called multiple times: every call closes the loop that
+    the grpc.aio-backed FirestoreDAO channel is bound to, causing all subsequent
+    tickers to fail.
+
+    Per-ticker errors are caught and logged so that one bad ticker never aborts
+    the rest of the batch.
+
+    Args:
+        retriever: Initialised :class:`~screener.edgar.retriever.EDGARRetriever`.
+        tickers: Ordered list of upper-case ticker symbols.
+        dry_run: Forwarded verbatim to :meth:`~EDGARRetriever.index_ticker`.
+
+    Returns:
+        ``(success_count, error_count)`` tuple.
+    """
+    success = 0
+    errors = 0
+    for symbol in tickers:
+        try:
+            await retriever.index_ticker(symbol, dry_run=dry_run)
+            success += 1
+        except Exception:
+            logger.exception("failed to index EDGAR for %s", symbol)
+            errors += 1
+    return success, errors
 
 
 def main() -> None:
@@ -98,15 +131,7 @@ def main() -> None:
         logger.warning("EDGARRetriever not implemented — skipping EDGAR indexing (see TB-07)")
         return
 
-    success = 0
-    errors = 0
-    for symbol in tickers:
-        try:
-            retriever.index_ticker(symbol, dry_run=dry_run)
-            success += 1
-        except Exception:
-            logger.exception("failed to index EDGAR for %s", symbol)
-            errors += 1
+    success, errors = asyncio.run(_run_indexing(retriever, tickers, dry_run))
 
     logger.info(
         "edgar_disclosure_job complete — success=%d errors=%d month_id=%s",

@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import time
 from datetime import datetime, timedelta, timezone
 
 from screener.agents.prompts import build_disclosure_block
@@ -32,8 +33,11 @@ logger = logging.getLogger(__name__)
 # Stored in the chunks/ collection so it shares the same DAO/namespace.
 _INDEX_DOC_SUFFIX = "_index"
 
-# Batch size for embedding API calls — keeps individual requests small
-_EMBED_BATCH_SIZE = 100
+# Batch size for embedding API calls — kept small to stay within Gemini's 15 RPM free-tier limit.
+_EMBED_BATCH_SIZE = 20
+
+# Retry config for embedding API 429 / quota errors.
+_EMBED_RETRY_DELAYS = (10, 30, 60)  # seconds between attempts (max 3 retries)
 
 
 async def get_disclosure_chunks_async(
@@ -138,15 +142,21 @@ class EDGARRetriever:
     # Public API
     # ------------------------------------------------------------------
 
-    def index_ticker(self, symbol: str, dry_run: bool = False) -> int:
+    async def index_ticker(self, symbol: str, dry_run: bool = False) -> int:
         """Fetch, chunk, embed, and write EDGAR filings for *symbol*.
 
         Steps:
         1. Check the freshness sentinel — skip if the index is current.
         2. Fetch filings via :mod:`screener.edgar.fetcher`.
-        3. Embed all chunks in batches.
+        3. Embed all chunks in batches (with retry on quota errors).
         4. Write chunk docs to the ``chunks/`` collection (idempotent doc IDs).
         5. Update the freshness sentinel.
+
+        This method is async so all DAO calls share a single event loop created
+        by the caller (``edgar_disclosure/main.py``), which prevents the
+        ``RuntimeError: Event loop is closed`` failure that occurs when
+        ``asyncio.run()`` is called repeatedly inside a loop — each call closes
+        the loop that the grpc.aio-backed FirestoreDAO channel is bound to.
 
         Args:
             symbol: Upper-case ticker symbol, e.g. ``"AAPL"``.
@@ -158,7 +168,7 @@ class EDGARRetriever:
         """
         slug = ticker_to_slug(symbol)
 
-        if self._is_fresh(slug):
+        if await self._is_fresh(slug):
             logger.info(
                 "EDGAR index is fresh — skipping ticker=%s (freshness_days=%d)",
                 symbol,
@@ -181,7 +191,11 @@ class EDGARRetriever:
         logger.info(
             "EDGAR: embedding %d chunks for ticker=%s", len(chunks), symbol
         )
-        enriched = self._embed_chunks(chunks)
+        # _embed_chunks is synchronous (uses time.sleep for backoff).  Running it
+        # in an executor keeps the event loop unblocked, which is good practice
+        # even in a batch job — it allows asyncio housekeeping to proceed.
+        loop = asyncio.get_event_loop()
+        enriched = await loop.run_in_executor(None, self._embed_chunks, chunks)
 
         if dry_run:
             logger.info(
@@ -191,7 +205,7 @@ class EDGARRetriever:
             )
             return 0
 
-        written = asyncio.run(self._write_chunks(enriched, slug))
+        written = await self._write_chunks(enriched, slug)
         logger.info(
             "EDGAR: wrote %d chunks for ticker=%s", written, symbol
         )
@@ -234,7 +248,7 @@ class EDGARRetriever:
             f"Supported: google_genai, openai."
         )
 
-    def _is_fresh(self, slug: str) -> bool:
+    async def _is_fresh(self, slug: str) -> bool:
         """Return ``True`` if the index sentinel is newer than freshness_days.
 
         Reads ``chunks/{slug}_index`` from the DAO.  Returns ``False`` (i.e.
@@ -248,7 +262,7 @@ class EDGARRetriever:
             ``True`` if the index is fresh and should be skipped.
         """
         doc_id = f"{slug}{_INDEX_DOC_SUFFIX}"
-        doc: dict | None = asyncio.run(self._dao.get(CHUNKS, doc_id))
+        doc: dict | None = await self._dao.get(CHUNKS, doc_id)
 
         if not doc:
             return False
@@ -294,8 +308,31 @@ class EDGARRetriever:
 
         for i in range(num_batches):
             batch = texts[i * _EMBED_BATCH_SIZE : (i + 1) * _EMBED_BATCH_SIZE]
-            batch_embeddings = self._embedder.embed_documents(batch)
-            embeddings.extend(batch_embeddings)
+            last_exc: Exception | None = None
+            for attempt, delay in enumerate(
+                (None,) + _EMBED_RETRY_DELAYS, start=0
+            ):
+                if delay is not None:
+                    logger.warning(
+                        "EDGAR embed batch %d/%d failed (attempt %d) — "
+                        "retrying in %ds",
+                        i + 1,
+                        num_batches,
+                        attempt,
+                        delay,
+                    )
+                    time.sleep(delay)
+                try:
+                    batch_embeddings = self._embedder.embed_documents(batch)
+                    embeddings.extend(batch_embeddings)
+                    break
+                except Exception as exc:
+                    last_exc = exc
+            else:
+                # All retries exhausted — propagate so index_ticker can log and
+                # move on to the next ticker rather than silently producing an
+                # incomplete index.
+                raise last_exc  # type: ignore[misc]
 
         now = datetime.now(timezone.utc)
         enriched = []

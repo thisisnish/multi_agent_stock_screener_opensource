@@ -37,7 +37,7 @@ main:
 
     - check_financial_update:
         switch:
-          - condition: '${financial_update_result.status != "succeeded"}'
+          - condition: '${financial_update_result.status.succeededCount < 1}'
             raise: '${"financial_update_job failed: " + json.encode_to_string(financial_update_result)}'
 
     - run_edgar_disclosure:
@@ -56,7 +56,7 @@ main:
 
     - check_edgar_disclosure:
         switch:
-          - condition: '${edgar_disclosure_result.status != "succeeded"}'
+          - condition: '${edgar_disclosure_result.status.succeededCount < 1}'
             raise: '${"edgar_disclosure_job failed: " + json.encode_to_string(edgar_disclosure_result)}'
 
     - run_screener:
@@ -75,7 +75,7 @@ main:
 
     - check_screener:
         switch:
-          - condition: '${screener_result.status != "succeeded"}'
+          - condition: '${screener_result.status.succeededCount < 1}'
             raise: '${"screener_job failed: " + json.encode_to_string(screener_result)}'
 
     - derive_eval_month:

@@ -8,15 +8,17 @@
 #
 # Prerequisites:
 #   - gcloud CLI authenticated: gcloud auth login
-#   - Docker running locally (for image builds)
+#   - Docker running locally (for Cloud Run Job image builds)
 #   - Artifact Registry repo already created (setup_gcp.sh)
+#   Note: the eval Cloud Function is deployed from source — Docker is NOT
+#         required for that component.
 #
 # Usage:
 #   export GCP_PROJECT_ID=my-gcp-project
 #   export GCP_REGION=us-central1          # optional, defaults to us-central1
 #   bash deploy/deploy_all.sh
 #
-# To skip a specific job build (e.g. eval GCF only):
+# To deploy only the eval Cloud Function (skip all Docker builds):
 #   SKIP_FINANCIAL_UPDATE=1 SKIP_EDGAR=1 SKIP_SCREENER=1 bash deploy/deploy_all.sh
 # ---------------------------------------------------------------------------
 
@@ -172,23 +174,13 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# eval GCF — Cloud Function
-# Cloud Functions 2nd-gen supports Artifact Registry image deployment.
+# eval GCF — Cloud Function (source deploy, no Docker image needed)
+# Cloud Functions gen2 is deployed directly from source via gcloud — no
+# Dockerfile or Artifact Registry image required for this component.
 # ---------------------------------------------------------------------------
 if [[ "${SKIP_EVAL_GCF}" == "0" ]]; then
-    build_and_push "eval-gcf" "docker/Dockerfile.eval"
-    EVAL_IMAGE="${REGISTRY}/eval-gcf:${IMAGE_TAG}"
-
-    log_step "Deploying eval GCF (Cloud Function)..."
-    if gcloud functions describe "eval-handler" \
-        --region="${REGION}" \
-        --project="${PROJECT_ID}" &>/dev/null; then
-        FUNC_ACTION="update"
-    else
-        FUNC_ACTION="deploy"
-    fi
-
-    gcloud functions "${FUNC_ACTION}" "eval-handler" \
+    log_step "Deploying eval Cloud Function from source (gcf/eval)..."
+    gcloud functions deploy "eval-handler" \
         --gen2 \
         --region="${REGION}" \
         --runtime=python311 \
@@ -203,9 +195,9 @@ if [[ "${SKIP_EVAL_GCF}" == "0" ]]; then
         --set-secrets="ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest,GROQ_API_KEY=GROQ_API_KEY:latest,RESEND_API_KEY=RESEND_API_KEY:latest" \
         --project="${PROJECT_ID}"
 
-    log_info "eval GCF deployed."
+    log_info "eval Cloud Function deployed."
 else
-    log_warn "Skipping eval GCF (SKIP_EVAL_GCF=1)"
+    log_warn "Skipping eval Cloud Function (SKIP_EVAL_GCF=1)"
 fi
 
 # ---------------------------------------------------------------------------

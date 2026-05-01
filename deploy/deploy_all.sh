@@ -179,12 +179,12 @@ fi
 # Dockerfile or Artifact Registry image required for this component.
 # ---------------------------------------------------------------------------
 if [[ "${SKIP_EVAL_GCF}" == "0" ]]; then
-    log_step "Deploying eval Cloud Function from source (gcf/eval)..."
+    log_step "Deploying eval Cloud Function from repo root..."
     gcloud functions deploy "eval-handler" \
         --gen2 \
         --region="${REGION}" \
         --runtime=python311 \
-        --source=gcf/eval \
+        --source=. \
         --entry-point=eval_handler \
         --trigger-http \
         --no-allow-unauthenticated \
@@ -203,10 +203,10 @@ fi
 # ---------------------------------------------------------------------------
 # Re-deploy Cloud Workflow (picks up any YAML changes)
 # ---------------------------------------------------------------------------
-log_step "Re-deploying Cloud Workflow 'sp500-monthly-pipeline'..."
+log_step "Re-deploying Cloud Workflow 'stock-screener-monthly-pipeline'..."
 WORKFLOW_SA="workflow-runner"
-gcloud workflows deploy "sp500-monthly-pipeline" \
-    --source="deploy/workflows/sp500-monthly-pipeline.yaml" \
+gcloud workflows deploy "stock-screener-monthly-pipeline" \
+    --source="deploy/workflows/stock-screener-monthly-pipeline.yaml" \
     --location="${REGION}" \
     --service-account="${WORKFLOW_SA}@${PROJECT_ID}.iam.gserviceaccount.com" \
     --project="${PROJECT_ID}"
@@ -219,7 +219,7 @@ log_info ""
 log_info "=== Deploy complete ==="
 log_info ""
 log_info "To trigger a manual pipeline run:"
-log_info "  gcloud workflows run sp500-monthly-pipeline \\"
+log_info "  gcloud workflows run stock-screener-monthly-pipeline \\"
 log_info "    --location=${REGION} \\"
 log_info "    --data='{\"project_id\": \"${PROJECT_ID}\", \"region\": \"${REGION}\"}' \\"
 log_info "    --project=${PROJECT_ID}"

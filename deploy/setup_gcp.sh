@@ -137,7 +137,7 @@ bind_role "${GCF_SA}" "roles/logging.logWriter"
 
 # Cloud Workflows SA needs to invoke Cloud Run Jobs and call the eval GCF
 bind_role "${WORKFLOW_SA}" "roles/run.invoker"
-bind_role "${WORKFLOW_SA}" "roles/run.jobs.jobsRunner"
+bind_role "${WORKFLOW_SA}" "roles/run.developer"
 bind_role "${WORKFLOW_SA}" "roles/cloudfunctions.invoker"
 bind_role "${WORKFLOW_SA}" "roles/workflows.invoker"
 bind_role "${WORKFLOW_SA}" "roles/logging.logWriter"

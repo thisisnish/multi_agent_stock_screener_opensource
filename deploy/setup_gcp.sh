@@ -25,10 +25,10 @@ set -euo pipefail
 PROJECT_ID="${GCP_PROJECT_ID:?ERROR: GCP_PROJECT_ID is required}"
 REGION="${GCP_REGION:-us-central1}"
 ARTIFACT_REGISTRY_REPO="stock-screener"
-WORKFLOW_NAME="sp500-monthly-pipeline"
-SCHEDULER_JOB_NAME="sp500-monthly-trigger"
-# 1st Friday of month at 9 AM Eastern
-SCHEDULER_CRON="0 9 1-7 * 5"
+WORKFLOW_NAME="stock-screener-monthly-pipeline"
+SCHEDULER_JOB_NAME="stock-screener-monthly-trigger"
+# 1st Friday of month at 3 PM Eastern
+SCHEDULER_CRON="0 15 1-7 * 5"
 SCHEDULER_TZ="America/New_York"
 WORKFLOW_SA="workflow-runner"
 CLOUDRUN_SA="cloudrun-jobs"

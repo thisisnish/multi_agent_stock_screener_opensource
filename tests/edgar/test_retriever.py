@@ -19,7 +19,6 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 from screener.lib.config_loader import (
     AppConfig,
@@ -28,8 +27,6 @@ from screener.lib.config_loader import (
     FirestoreConfig,
     LLMConfig,
     NotificationsConfig,
-    ScreenerConfig,
-    SignalsConfig,
     StorageConfig,
 )
 from screener.lib.storage.schema import CHUNKS
@@ -97,7 +94,9 @@ def _make_retriever(cfg: AppConfig, dao: MagicMock):
 
 def _fresh_sentinel() -> dict:
     """Sentinel doc stamped 1 minute ago — within any reasonable freshness window."""
-    return {"indexed_at": (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()}
+    return {
+        "indexed_at": (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    }
 
 
 def _stale_sentinel(freshness_days: int = 30) -> dict:

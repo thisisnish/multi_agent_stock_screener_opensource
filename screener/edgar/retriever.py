@@ -188,9 +188,7 @@ class EDGARRetriever:
             logger.warning("EDGAR: no chunks produced for ticker=%s", symbol)
             return 0
 
-        logger.info(
-            "EDGAR: embedding %d chunks for ticker=%s", len(chunks), symbol
-        )
+        logger.info("EDGAR: embedding %d chunks for ticker=%s", len(chunks), symbol)
         # _embed_chunks is synchronous (uses time.sleep for backoff).  Running it
         # in an executor keeps the event loop unblocked, which is good practice
         # even in a batch job — it allows asyncio housekeeping to proceed.
@@ -206,9 +204,7 @@ class EDGARRetriever:
             return 0
 
         written = await self._write_chunks(enriched, slug)
-        logger.info(
-            "EDGAR: wrote %d chunks for ticker=%s", written, symbol
-        )
+        logger.info("EDGAR: wrote %d chunks for ticker=%s", written, symbol)
         return written
 
     # ------------------------------------------------------------------
@@ -309,13 +305,10 @@ class EDGARRetriever:
         for i in range(num_batches):
             batch = texts[i * _EMBED_BATCH_SIZE : (i + 1) * _EMBED_BATCH_SIZE]
             last_exc: Exception | None = None
-            for attempt, delay in enumerate(
-                (None,) + _EMBED_RETRY_DELAYS, start=0
-            ):
+            for attempt, delay in enumerate((None,) + _EMBED_RETRY_DELAYS, start=0):
                 if delay is not None:
                     logger.warning(
-                        "EDGAR embed batch %d/%d failed (attempt %d) — "
-                        "retrying in %ds",
+                        "EDGAR embed batch %d/%d failed (attempt %d) — retrying in %ds",
                         i + 1,
                         num_batches,
                         attempt,

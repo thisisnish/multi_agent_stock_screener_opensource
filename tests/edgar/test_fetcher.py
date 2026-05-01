@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from screener.edgar.fetcher import (
     chunk_text,
@@ -132,9 +131,27 @@ def _make_submissions_response(entries: list[dict]) -> dict:
 def test_fetch_filing_metadata_filters_form_type(monkeypatch):
     """Only includes 10-K and 10-Q filings; skips 8-K."""
     entries = [
-        {"acc": "0001234567-24-000001", "form": "10-K", "date": "2024-01-01", "period": "2023-12-31", "doc": "10k.htm"},
-        {"acc": "0001234567-24-000002", "form": "8-K", "date": "2024-02-01", "period": "2024-01-31", "doc": "8k.htm"},
-        {"acc": "0001234567-24-000003", "form": "10-Q", "date": "2024-05-01", "period": "2024-03-31", "doc": "10q.htm"},
+        {
+            "acc": "0001234567-24-000001",
+            "form": "10-K",
+            "date": "2024-01-01",
+            "period": "2023-12-31",
+            "doc": "10k.htm",
+        },
+        {
+            "acc": "0001234567-24-000002",
+            "form": "8-K",
+            "date": "2024-02-01",
+            "period": "2024-01-31",
+            "doc": "8k.htm",
+        },
+        {
+            "acc": "0001234567-24-000003",
+            "form": "10-Q",
+            "date": "2024-05-01",
+            "period": "2024-03-31",
+            "doc": "10q.htm",
+        },
     ]
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -156,12 +173,28 @@ def test_fetch_filing_metadata_date_cutoff(monkeypatch):
     """Excludes filings older than the configured years cutoff."""
     from datetime import date, timedelta
 
-    recent_date = (date.today() - timedelta(days=30)).isoformat()   # 30 days ago — always within years=2
-    old_date = (date.today() - timedelta(days=365 * 5)).isoformat()  # 5 years ago — always outside years=2
+    recent_date = (
+        date.today() - timedelta(days=30)
+    ).isoformat()  # 30 days ago — always within years=2
+    old_date = (
+        date.today() - timedelta(days=365 * 5)
+    ).isoformat()  # 5 years ago — always outside years=2
 
     entries = [
-        {"acc": "0001234567-24-000001", "form": "10-K", "date": recent_date, "period": "2023-12-31", "doc": "10k.htm"},
-        {"acc": "0001234567-20-000001", "form": "10-K", "date": old_date, "period": "2019-12-31", "doc": "10k_old.htm"},
+        {
+            "acc": "0001234567-24-000001",
+            "form": "10-K",
+            "date": recent_date,
+            "period": "2023-12-31",
+            "doc": "10k.htm",
+        },
+        {
+            "acc": "0001234567-20-000001",
+            "form": "10-K",
+            "date": old_date,
+            "period": "2019-12-31",
+            "doc": "10k_old.htm",
+        },
     ]
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -184,7 +217,9 @@ def test_fetch_filing_metadata_date_cutoff(monkeypatch):
 
 def test_strip_html_returns_text():
     """Extracts readable plain text from a minimal HTML fixture."""
-    html = b"<html><body><p>The company reported strong revenue growth.</p></body></html>"
+    html = (
+        b"<html><body><p>The company reported strong revenue growth.</p></body></html>"
+    )
     result = strip_html(html)
     # Should contain some portion of the prose
     assert "revenue" in result or len(result) > 0
@@ -205,7 +240,9 @@ def test_strip_html_empty_input():
 def test_chunk_text_produces_chunks():
     """Produces at least one chunk for a text longer than the minimum threshold."""
     text = "The company has reported consistent revenue growth. " * 200  # ~10k chars
-    chunks = chunk_text(text, "AAPL", "10-K", "2024-12-31", chunk_size=512, overlap=0.10)
+    chunks = chunk_text(
+        text, "AAPL", "10-K", "2024-12-31", chunk_size=512, overlap=0.10
+    )
     assert len(chunks) >= 1
     assert all(c["ticker"] == "AAPL" for c in chunks)
     assert all(c["form_type"] == "10-K" for c in chunks)
@@ -214,8 +251,12 @@ def test_chunk_text_produces_chunks():
 def test_chunk_text_overlap_produces_more_chunks():
     """More chunks are produced with overlap than without (for the same text)."""
     text = "Word " * 2000  # long enough to require chunking
-    chunks_with_overlap = chunk_text(text, "AAPL", "10-K", "2024-12-31", chunk_size=512, overlap=0.10)
-    chunks_no_overlap = chunk_text(text, "AAPL", "10-K", "2024-12-31", chunk_size=512, overlap=0.0)
+    chunks_with_overlap = chunk_text(
+        text, "AAPL", "10-K", "2024-12-31", chunk_size=512, overlap=0.10
+    )
+    chunks_no_overlap = chunk_text(
+        text, "AAPL", "10-K", "2024-12-31", chunk_size=512, overlap=0.0
+    )
     assert len(chunks_with_overlap) >= len(chunks_no_overlap)
 
 
@@ -254,7 +295,6 @@ def test_get_filing_chunks_cik_not_found(monkeypatch):
 
 def test_get_filing_chunks_end_to_end(monkeypatch):
     """Full pipeline: resolve_cik → fetch metadata → download → strip → chunk."""
-    import screener.edgar.fetcher as fetcher_mod
 
     monkeypatch.setattr("screener.edgar.fetcher.resolve_cik", lambda t: "0000320193")
 
@@ -272,7 +312,9 @@ def test_get_filing_chunks_end_to_end(monkeypatch):
         lambda cik, form_types, years: filings,
     )
 
-    long_text = "The company reported strong financial performance with growing revenue. " * 300
+    long_text = (
+        "The company reported strong financial performance with growing revenue. " * 300
+    )
     monkeypatch.setattr(
         "screener.edgar.fetcher.download_primary_document",
         lambda cik, acc, doc: b"<html><body>" + long_text.encode() + b"</body></html>",

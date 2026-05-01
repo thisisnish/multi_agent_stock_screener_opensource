@@ -29,9 +29,7 @@ from lxml.html.clean import Cleaner
 
 logger = logging.getLogger(__name__)
 
-_HEADERS = {
-    "User-Agent": "multi-agent-stock-screener research@example.com"
-}
+_HEADERS = {"User-Agent": "multi-agent-stock-screener research@example.com"}
 
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
@@ -179,9 +177,7 @@ def fetch_filing_metadata(
             continue
         if filing_date < cutoff:
             continue
-        acc_with_dashes = acc if "-" in acc else (
-            f"{acc[:10]}-{acc[10:12]}-{acc[12:]}"
-        )
+        acc_with_dashes = acc if "-" in acc else (f"{acc[:10]}-{acc[10:12]}-{acc[12:]}")
         results.append(
             {
                 "accession_number": acc_with_dashes,

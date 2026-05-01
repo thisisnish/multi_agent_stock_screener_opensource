@@ -198,9 +198,7 @@ class TestWriteQuarterlySignals:
 
         import asyncio
 
-        asyncio.get_event_loop().run_until_complete(
-            write_quarterly_signals(signals, quarter_id, dao)
-        )
+        asyncio.run(write_quarterly_signals(signals, quarter_id, dao))
 
         dao.set.assert_called_once()
         call_args = dao.set.call_args
@@ -215,9 +213,7 @@ class TestWriteQuarterlySignals:
 
         import asyncio
 
-        asyncio.get_event_loop().run_until_complete(
-            write_quarterly_signals(signals, quarter_id, dao)
-        )
+        asyncio.run(write_quarterly_signals(signals, quarter_id, dao))
 
         payload = dao.set.call_args.args[2]
         assert EBITDA_SIGNAL_KEY in payload
@@ -230,9 +226,7 @@ class TestWriteQuarterlySignals:
 
         import asyncio
 
-        asyncio.get_event_loop().run_until_complete(
-            write_quarterly_signals(signals, quarter_id, dao)
-        )
+        asyncio.run(write_quarterly_signals(signals, quarter_id, dao))
 
         payload = dao.set.call_args.args[2]
         assert payload["quarter_id"] == quarter_id
@@ -241,8 +235,6 @@ class TestWriteQuarterlySignals:
         import asyncio
 
         dao = AsyncMock()
-        asyncio.get_event_loop().run_until_complete(
-            write_quarterly_signals({}, "2024-Q4", dao)
-        )
+        asyncio.run(write_quarterly_signals({}, "2024-Q4", dao))
         payload = dao.set.call_args.args[2]
         assert "ebitda_written_ts" in payload

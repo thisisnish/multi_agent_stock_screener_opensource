@@ -52,7 +52,9 @@ def _download_configs_from_gcs(bucket_name: str) -> tuple[str, str]:
     return config_path, tickers_path
 
 
-async def _run_indexing(retriever, tickers: list[str], dry_run: bool) -> tuple[int, int]:
+async def _run_indexing(
+    retriever, tickers: list[str], dry_run: bool
+) -> tuple[int, int]:
     """Await ``retriever.index_ticker`` for each ticker inside a single event loop.
 
     Using a single ``asyncio.run()`` call (in ``main``) and awaiting each ticker
@@ -126,9 +128,12 @@ def main() -> None:
 
     try:
         from screener.edgar.retriever import EDGARRetriever
+
         retriever = EDGARRetriever(app_config=app_config, dao=dao)
     except (ImportError, AttributeError):
-        logger.warning("EDGARRetriever not implemented — skipping EDGAR indexing (see TB-07)")
+        logger.warning(
+            "EDGARRetriever not implemented — skipping EDGAR indexing (see TB-07)"
+        )
         return
 
     success, errors = asyncio.run(_run_indexing(retriever, tickers, dry_run))

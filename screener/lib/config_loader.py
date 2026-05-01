@@ -53,9 +53,7 @@ class ConfigError(RuntimeError):
 # Matches both ${VAR} and ${VAR:-default} forms.
 # Group 1: variable name
 # Group 2: default value (present only for the ${VAR:-default} form, may be empty string)
-_ENV_VAR_RE = re.compile(
-    r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}"
-)
+_ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}")
 
 
 def _interpolate(value: object) -> object:

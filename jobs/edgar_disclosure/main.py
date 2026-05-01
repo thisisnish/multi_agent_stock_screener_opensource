@@ -21,10 +21,34 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import tempfile
 from datetime import datetime, timezone
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
+
+
+def _download_configs_from_gcs(bucket_name: str) -> tuple[str, str]:
+    """Download config.yaml and tickers.yaml from GCS to a temp directory.
+
+    Returns (config_path, tickers_path) as absolute paths to the downloaded files.
+    """
+    from google.cloud import storage as gcs
+
+    client = gcs.Client()
+    bucket = client.bucket(bucket_name)
+    tmp_dir = tempfile.mkdtemp(prefix="screener_config_")
+
+    config_path = os.path.join(tmp_dir, "config.yaml")
+    tickers_path = os.path.join(tmp_dir, "tickers.yaml")
+
+    bucket.blob("config.yaml").download_to_filename(config_path)
+    logger.info("downloaded gs://%s/config.yaml → %s", bucket_name, config_path)
+
+    bucket.blob("tickers.yaml").download_to_filename(tickers_path)
+    logger.info("downloaded gs://%s/tickers.yaml → %s", bucket_name, tickers_path)
+
+    return config_path, tickers_path
 
 
 def main() -> None:
@@ -40,7 +64,15 @@ def main() -> None:
         "edgar_disclosure_job starting — month_id=%s dry_run=%s", month_id, dry_run
     )
 
-    app_config = load_config()
+    gcs_bucket = os.environ.get("GCS_CONFIG_BUCKET")
+    if gcs_bucket:
+        config_path, tickers_path = _download_configs_from_gcs(gcs_bucket)
+    else:
+        logger.info("GCS_CONFIG_BUCKET not set — using local config/ files")
+        config_path = "config/config.yaml"
+        tickers_path = "config/tickers.yaml"
+
+    app_config = load_config(path=config_path)
     dao = FirestoreDAO(
         project_id=app_config.storage.firestore.project_id,
         database=app_config.storage.firestore.database,
@@ -51,11 +83,11 @@ def main() -> None:
     try:
         import yaml
 
-        with open("config/tickers.yaml") as f:
+        with open(tickers_path) as f:
             ticker_data = yaml.safe_load(f)
         tickers = [entry["symbol"] for entry in ticker_data.get("tickers", [])]
     except FileNotFoundError:
-        logger.warning("config/tickers.yaml not found — using empty ticker list")
+        logger.warning("tickers.yaml not found — using empty ticker list")
 
     logger.info("indexing EDGAR filings for %d tickers", len(tickers))
 

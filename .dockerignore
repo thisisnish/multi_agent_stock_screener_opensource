@@ -8,6 +8,10 @@
 # override ADC and cause an immediate DefaultCredentialsError crash.
 # ---------------------------------------------------------------------------
 
+# Config YAML files — served from GCS at runtime, not baked into the image.
+# See deploy/deploy_all.sh for the gsutil upload step.
+config/
+
 # Local secrets / dotenv files — never ship these in an image
 .env
 .env.*

@@ -66,6 +66,7 @@ gcloud services enable \
     firestore.googleapis.com \
     cloudbuild.googleapis.com \
     iam.googleapis.com \
+    storage.googleapis.com \
     --project="${PROJECT_ID}"
 
 log_info "APIs enabled."
@@ -173,7 +174,35 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 7. Secret Manager — create secret stubs
+# 7. GCS config bucket
+# ---------------------------------------------------------------------------
+CONFIG_BUCKET="${PROJECT_ID}-config"
+log_info "Ensuring GCS config bucket 'gs://${CONFIG_BUCKET}' exists..."
+if gsutil ls -b "gs://${CONFIG_BUCKET}" &>/dev/null; then
+    log_warn "GCS bucket 'gs://${CONFIG_BUCKET}' already exists — skipping."
+else
+    gsutil mb \
+        -p "${PROJECT_ID}" \
+        -l "${REGION}" \
+        -b on \
+        "gs://${CONFIG_BUCKET}"
+    log_info "GCS bucket created: gs://${CONFIG_BUCKET}"
+fi
+
+log_info "Granting storage.objectViewer to Cloud Run Jobs SA on gs://${CONFIG_BUCKET}..."
+gsutil iam ch \
+    "serviceAccount:${CLOUDRUN_SA}@${PROJECT_ID}.iam.gserviceaccount.com:roles/storage.objectViewer" \
+    "gs://${CONFIG_BUCKET}"
+
+log_info "Granting storage.objectViewer to eval GCF SA on gs://${CONFIG_BUCKET}..."
+gsutil iam ch \
+    "serviceAccount:${GCF_SA}@${PROJECT_ID}.iam.gserviceaccount.com:roles/storage.objectViewer" \
+    "gs://${CONFIG_BUCKET}"
+
+log_info "GCS config bucket ready."
+
+# ---------------------------------------------------------------------------
+# 8. Secret Manager — create secret stubs
 # ---------------------------------------------------------------------------
 log_info "Creating Secret Manager secret stubs (values must be set separately)..."
 
@@ -211,7 +240,7 @@ log_warn "Update each secret via:"
 log_warn "  echo -n 'YOUR_KEY' | gcloud secrets versions add SECRET_NAME --data-file=- --project=${PROJECT_ID}"
 
 # ---------------------------------------------------------------------------
-# 8. Cloud Workflows — deploy workflow definition
+# 9. Cloud Workflows — deploy workflow definition
 # ---------------------------------------------------------------------------
 log_info "Deploying Cloud Workflow '${WORKFLOW_NAME}'..."
 gcloud workflows deploy "${WORKFLOW_NAME}" \
@@ -222,7 +251,7 @@ gcloud workflows deploy "${WORKFLOW_NAME}" \
 log_info "Cloud Workflow deployed."
 
 # ---------------------------------------------------------------------------
-# 9. Cloud Scheduler — monthly trigger
+# 10. Cloud Scheduler — monthly trigger
 # ---------------------------------------------------------------------------
 log_info "Creating Cloud Scheduler job '${SCHEDULER_JOB_NAME}'..."
 

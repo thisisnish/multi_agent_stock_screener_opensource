@@ -34,6 +34,7 @@ REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 CLOUDRUN_SA="cloudrun-jobs"
 GCF_SA="gcf-eval"
+GCS_CONFIG_BUCKET="${GCS_CONFIG_BUCKET:-${PROJECT_ID}-config}"
 
 # Cloud Run Job resource limits — adjust for your workload
 CLOUDRUN_CPU="${CLOUDRUN_CPU:-2}"
@@ -102,8 +103,8 @@ deploy_cloud_run_job() {
     local secrets_flag
     secrets_flag=$(IFS=,; echo "${secret_args[*]}")
 
-    # Pass GCP_PROJECT_ID as a plain env var (not a secret — it is not sensitive)
-    local env_vars="GCP_PROJECT_ID=${PROJECT_ID}"
+    # Pass non-secret config as plain env vars
+    local env_vars="GCP_PROJECT_ID=${PROJECT_ID},GCS_CONFIG_BUCKET=${GCS_CONFIG_BUCKET}"
 
     if gcloud run jobs describe "${job_name}" \
         --region="${REGION}" \
@@ -136,6 +137,15 @@ deploy_cloud_run_job() {
     fi
     log_info "Cloud Run Job '${job_name}' deployed."
 }
+
+# ---------------------------------------------------------------------------
+# Upload config files to GCS
+# Config files contain no secrets — all sensitive values are ${VAR_NAME}
+# placeholders resolved at runtime from Secret Manager env vars.
+# ---------------------------------------------------------------------------
+log_step "Uploading config files to gs://${GCS_CONFIG_BUCKET}/ ..."
+gsutil cp config/config.yaml config/tickers.yaml "gs://${GCS_CONFIG_BUCKET}/"
+log_info "Config files uploaded to gs://${GCS_CONFIG_BUCKET}/"
 
 # ---------------------------------------------------------------------------
 # Configure Docker auth for Artifact Registry
@@ -191,7 +201,7 @@ if [[ "${SKIP_EVAL_GCF}" == "0" ]]; then
         --service-account="${GCF_SA}@${PROJECT_ID}.iam.gserviceaccount.com" \
         --memory=1Gi \
         --timeout=540 \
-        --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID}" \
+        --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},GCS_CONFIG_BUCKET=${GCS_CONFIG_BUCKET}" \
         --set-secrets="ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest,GROQ_API_KEY=GROQ_API_KEY:latest,RESEND_API_KEY=RESEND_API_KEY:latest" \
         --project="${PROJECT_ID}"
 

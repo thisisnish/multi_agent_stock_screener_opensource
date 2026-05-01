@@ -52,6 +52,8 @@ main:
                   env:
                     - name: MONTH_ID
                       value: '${month_id}'
+        connector_params:
+          timeout: 3600
         result: edgar_disclosure_result
 
     - check_edgar_disclosure:

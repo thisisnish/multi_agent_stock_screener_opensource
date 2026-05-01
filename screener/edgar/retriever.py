@@ -36,6 +36,10 @@ _INDEX_DOC_SUFFIX = "_index"
 # Batch size for embedding API calls — kept small to stay within Gemini's 15 RPM free-tier limit.
 _EMBED_BATCH_SIZE = 20
 
+# Proactive inter-batch sleep (seconds) to stay under the 15 RPM free-tier limit.
+# 4.5 s ≈ 13 RPM, giving a comfortable margin before reactive retry kicks in.
+_EMBED_INTER_BATCH_SLEEP = 4.5
+
 # Retry config for embedding API 429 / quota errors.
 _EMBED_RETRY_DELAYS = (10, 30, 60)  # seconds between attempts (max 3 retries)
 
@@ -318,6 +322,11 @@ class EDGARRetriever:
                 try:
                     batch_embeddings = self._embedder.embed_documents(batch)
                     embeddings.extend(batch_embeddings)
+                    # Proactive rate-limit guard: sleep between batches so we
+                    # stay comfortably under the 15 RPM free-tier limit (~13 RPM).
+                    # Skip the sleep after the final batch — no next call follows.
+                    if i < num_batches - 1:
+                        time.sleep(_EMBED_INTER_BATCH_SLEEP)
                     break
                 except Exception as exc:
                     last_exc = exc

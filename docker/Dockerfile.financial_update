@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------------------
+# financial_update_job — refreshes FCF + EBITDA/EV for all tickers via yfinance
+#
+# Build:
+#   docker build -f docker/Dockerfile.financial_update -t financial_update_job .
+# Run locally:
+#   docker run --env-file .env financial_update_job
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system deps required by some transitive packages (e.g. newspaper3k)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        libxml2-dev \
+        libxslt1-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+CMD ["python", "jobs/financial_update/main.py"]

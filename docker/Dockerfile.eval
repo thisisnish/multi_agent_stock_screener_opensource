@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------------------
+# eval GCF — scores prior-month picks and writes quality metrics
+#
+# This Dockerfile is used to build the container image for the eval Cloud
+# Function (deployed via --source flag with functions-framework).
+#
+# Build:
+#   docker build -f docker/Dockerfile.eval -t eval_gcf .
+# Run locally:
+#   docker run --env-file .env -p 8080:8080 eval_gcf
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        libxml2-dev \
+        libxslt1-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir functions-framework
+
+COPY . .
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+# functions-framework serves the Cloud Function over HTTP on port 8080
+CMD ["functions-framework", "--target=eval_handler", "--source=gcf/eval/main.py"]

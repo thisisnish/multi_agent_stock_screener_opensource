@@ -1,10 +1,12 @@
 """
-gcf/eval/main.py — Monthly eval orchestrator.
+gcf/eval/main.py — Monthly eval orchestrator + Cloud Function HTTP entry point.
 
 Called by Cloud Workflows after screener_job completes. Receives month_id via
-environment variable or argument.
+the HTTP request body (JSON ``{"month_id": "YYYY-MM"}``) when running as a
+Cloud Function, or directly via ``run_eval_main()`` when called from Python.
 
-Entry point: run_eval_main(app_config, dao, month_id, dry_run)
+Cloud Function entry point: ``eval_handler(request)``
+Direct Python entry point: ``run_eval_main(app_config, dao, month_id, dry_run)``
 
 Flow:
     1. Fetch closed picks for month_id from PICKS collection
@@ -19,8 +21,14 @@ Flow:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import flask
 
 from screener.eval.metrics import (
     compute_acid_test,
@@ -30,8 +38,9 @@ from screener.eval.metrics import (
     format_metrics_report,
 )
 from screener.eval.scorer import score_picks_pure_math
-from screener.lib.config_loader import AppConfig
+from screener.lib.config_loader import AppConfig, load_config
 from screener.lib.storage.base import StorageDAO
+from screener.lib.storage.firestore import FirestoreDAO
 from screener.lib.storage.schema import EVAL, PICKS, eval_doc_id
 
 logger = logging.getLogger(__name__)
@@ -209,3 +218,81 @@ async def _run_async(
         "directional_bias": metrics.directional_bias,
         "systematic_issues": issues,
     }
+
+
+# ---------------------------------------------------------------------------
+# Cloud Function HTTP entry point
+# ---------------------------------------------------------------------------
+
+
+def eval_handler(request: "flask.Request") -> tuple[str, int]:
+    """Cloud Function HTTP entry point.
+
+    Invoked by Cloud Workflows via an authenticated OIDC HTTP POST.
+
+    Expected request body (JSON):
+        {"month_id": "YYYY-MM"}
+
+    Returns a JSON body and an HTTP status code.
+
+    Args:
+        request: The incoming Flask request object provided by the Cloud
+            Functions runtime.
+
+    Returns:
+        A (body, status_code) tuple.  Body is a JSON string.
+    """
+    logging.basicConfig(level=logging.INFO)
+
+    try:
+        payload = request.get_json(silent=True) or {}
+        month_id: str | None = payload.get("month_id") or os.environ.get("MONTH_ID")
+        if not month_id:
+            return (
+                json.dumps({"error": "month_id is required in request body or MONTH_ID env var"}),
+                400,
+            )
+
+        dry_run = bool(payload.get("dry_run", False))
+
+        app_config = load_config()
+        dao: StorageDAO = FirestoreDAO(
+            project_id=app_config.storage.firestore.project_id,
+            database=app_config.storage.firestore.database,
+        )
+
+        result = run_eval_main(app_config, dao, month_id, dry_run=dry_run)
+        return json.dumps(result), 200
+
+    except ValueError as exc:
+        logger.error("bad request: %s", exc)
+        return json.dumps({"error": str(exc)}), 400
+    except Exception as exc:
+        logger.exception("eval_handler unhandled error")
+        return json.dumps({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Standalone entry point — for local testing and Cloud Run fallback
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import sys
+
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+
+    _month_id = os.environ.get("MONTH_ID")
+    if not _month_id:
+        print("ERROR: MONTH_ID environment variable is required", file=sys.stderr)
+        sys.exit(1)
+
+    _dry_run = os.environ.get("DRY_RUN", "false").lower() in ("1", "true", "yes")
+    _app_config = load_config()
+    _dao: StorageDAO = FirestoreDAO(
+        project_id=_app_config.storage.firestore.project_id,
+        database=_app_config.storage.firestore.database,
+    )
+
+    _result = run_eval_main(_app_config, _dao, _month_id, dry_run=_dry_run)
+    print(json.dumps(_result, indent=2))
+    sys.exit(0 if _result.get("status") in ("success", "no_picks") else 1)

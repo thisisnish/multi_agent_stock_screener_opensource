@@ -86,11 +86,11 @@ notifications:
     enabled: true
 
     # Resend sender address.  Must be a verified domain in your Resend account.
-    from_address: "screener@yourdomain.com"
+    from_address: "${EMAIL_FROM_ADDRESS}"
 
     # List of recipient email addresses.
     recipients:
-      - "you@example.com"
+      - "${EMAIL_TO_ADDRESS}"
 
     # Subject prefix for monthly reports.
     subject_prefix: "[Stock Screener]"

@@ -23,7 +23,7 @@ set -euo pipefail
 # Configuration — override via environment variables
 # ---------------------------------------------------------------------------
 PROJECT_ID="${GCP_PROJECT_ID:?ERROR: GCP_PROJECT_ID is required}"
-REGION="${GCP_REGION:-us-central1}"
+REGION="${GCP_REGION:-us-west1}"
 ARTIFACT_REGISTRY_REPO="stock-screener"
 WORKFLOW_NAME="stock-screener-monthly-pipeline"
 SCHEDULER_JOB_NAME="stock-screener-monthly-trigger"
@@ -214,7 +214,7 @@ log_warn "  echo -n 'YOUR_KEY' | gcloud secrets versions add SECRET_NAME --data-
 # ---------------------------------------------------------------------------
 log_info "Deploying Cloud Workflow '${WORKFLOW_NAME}'..."
 gcloud workflows deploy "${WORKFLOW_NAME}" \
-    --source="deploy/workflows/sp500-monthly-pipeline.yaml" \
+    --source="deploy/workflows/stock-screener-monthly-pipeline.yaml" \
     --location="${REGION}" \
     --service-account="${WORKFLOW_SA}@${PROJECT_ID}.iam.gserviceaccount.com" \
     --project="${PROJECT_ID}"

@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Cloud Workflows — sp500-monthly-pipeline
+# Cloud Workflows — stock-screener-monthly-pipeline
 #
 # 4-step sequential DAG:
 #   1. financial_update_job  — refresh FCF + EBITDA/EV via yfinance
@@ -9,15 +9,6 @@
 #
 # Triggered by Cloud Scheduler on the 1st Friday of each month at 9 AM ET
 # (cron: 0 9 1-7 * 5, timezone: America/New_York).
-#
-# Required workflow arguments:
-#   project_id  — GCP project ID
-#   region      — Cloud Run region (e.g. "us-central1")
-#   month_id    — "YYYY-MM" string for the current pipeline run (passed to
-#                 eval GCF so it knows which month to score).
-#
-# If month_id is not supplied at invocation, the workflow derives it from the
-# current timestamp so it can be triggered manually without arguments.
 # ---------------------------------------------------------------------------
 
 main:
@@ -25,113 +16,99 @@ main:
   steps:
     - init:
         assign:
-          - project_id: ${default(map.get(args, "project_id"), sys.get_env("GOOGLE_CLOUD_PROJECT_ID"))}
-          - region: ${default(map.get(args, "region"), "us-central1")}
-          # Derive month_id as YYYY-MM from current time if not provided.
-          - current_time: ${sys.now()}
-          - month_id: ${default(map.get(args, "month_id"), text.substring(time.format(current_time), 0, 7))}
+          - project_id: '${default(map.get(args, "project_id"), sys.get_env("GOOGLE_CLOUD_PROJECT_ID"))}'
+          - region: '${default(map.get(args, "region"), "us-central1")}'
+          - current_time: '${sys.now()}'
+          - month_id: '${default(map.get(args, "month_id"), text.substring(time.format(current_time), 0, 7))}'
 
-    # ------------------------------------------------------------------
-    # Step 1 — financial_update_job
-    # ------------------------------------------------------------------
     - run_financial_update:
         call: googleapis.run.v1.namespaces.jobs.run
         args:
-          name: ${"namespaces/" + project_id + "/jobs/financial-update-job"}
-          location: ${region}
+          name: '${"namespaces/" + project_id + "/jobs/financial-update-job"}'
+          location: '${region}'
           body:
             overrides:
               containerOverrides:
                 - name: financial-update-job
                   env:
                     - name: MONTH_ID
-                      value: ${month_id}
+                      value: '${month_id}'
         result: financial_update_result
 
     - check_financial_update:
         switch:
-          - condition: ${financial_update_result.status != "succeeded"}
-            raise: ${"financial_update_job failed: " + json.encode_to_string(financial_update_result)}
+          - condition: '${financial_update_result.status != "succeeded"}'
+            raise: '${"financial_update_job failed: " + json.encode_to_string(financial_update_result)}'
 
-    # ------------------------------------------------------------------
-    # Step 2 — edgar_disclosure_job
-    # ------------------------------------------------------------------
     - run_edgar_disclosure:
         call: googleapis.run.v1.namespaces.jobs.run
         args:
-          name: ${"namespaces/" + project_id + "/jobs/edgar-disclosure-job"}
-          location: ${region}
+          name: '${"namespaces/" + project_id + "/jobs/edgar-disclosure-job"}'
+          location: '${region}'
           body:
             overrides:
               containerOverrides:
                 - name: edgar-disclosure-job
                   env:
                     - name: MONTH_ID
-                      value: ${month_id}
+                      value: '${month_id}'
         result: edgar_disclosure_result
 
     - check_edgar_disclosure:
         switch:
-          - condition: ${edgar_disclosure_result.status != "succeeded"}
-            raise: ${"edgar_disclosure_job failed: " + json.encode_to_string(edgar_disclosure_result)}
+          - condition: '${edgar_disclosure_result.status != "succeeded"}'
+            raise: '${"edgar_disclosure_job failed: " + json.encode_to_string(edgar_disclosure_result)}'
 
-    # ------------------------------------------------------------------
-    # Step 3 — screener_job
-    # ------------------------------------------------------------------
     - run_screener:
         call: googleapis.run.v1.namespaces.jobs.run
         args:
-          name: ${"namespaces/" + project_id + "/jobs/screener-job"}
-          location: ${region}
+          name: '${"namespaces/" + project_id + "/jobs/screener-job"}'
+          location: '${region}'
           body:
             overrides:
               containerOverrides:
                 - name: screener-job
                   env:
                     - name: MONTH_ID
-                      value: ${month_id}
+                      value: '${month_id}'
         result: screener_result
 
     - check_screener:
         switch:
-          - condition: ${screener_result.status != "succeeded"}
-            raise: ${"screener_job failed: " + json.encode_to_string(screener_result)}
+          - condition: '${screener_result.status != "succeeded"}'
+            raise: '${"screener_job failed: " + json.encode_to_string(screener_result)}'
 
-    # ------------------------------------------------------------------
-    # Step 4 — eval GCF
-    # Scores the *previous* calendar month so that picks have had time to
-    # close. Pass the month immediately before the current pipeline month.
-    # ------------------------------------------------------------------
     - derive_eval_month:
         assign:
-          - current_year: ${int(text.substring(month_id, 0, 4))}
-          - current_month_num: ${int(text.substring(month_id, 5, 7))}
-          - eval_year: ${if(current_month_num == 1, current_year - 1, current_year)}
-          - eval_month_num: ${if(current_month_num == 1, 12, current_month_num - 1)}
-          - eval_month_str: ${text.substring("0" + string(eval_month_num), text.length("0" + string(eval_month_num)) - 2)}
-          - eval_month_id: ${string(eval_year) + "-" + eval_month_str}
+          - current_year: '${int(text.substring(month_id, 0, 4))}'
+          - current_month_num: '${int(text.substring(month_id, 5, 7))}'
+          - eval_year: '${if(current_month_num == 1, current_year - 1, current_year)}'
+          - eval_month_num: '${if(current_month_num == 1, 12, current_month_num - 1)}'
+          - temp_str: '${"0" + string(eval_month_num)}'
+          - eval_month_str: '${text.substring(temp_str, len(temp_str) - 2, len(temp_str))}'
+          - eval_month_id: '${string(eval_year) + "-" + eval_month_str}'
 
     - run_eval_gcf:
         call: http.post
         args:
-          url: ${"https://" + region + "-" + project_id + ".cloudfunctions.net/eval-handler"}
+          url: '${"https://" + region + "-" + project_id + ".cloudfunctions.net/eval-handler"}'
           auth:
             type: OIDC
           body:
-            month_id: ${eval_month_id}
+            month_id: '${eval_month_id}'
         result: eval_result
 
     - check_eval:
         switch:
-          - condition: ${eval_result.code != 200}
-            raise: ${"eval GCF failed: " + json.encode_to_string(eval_result.body)}
+          - condition: '${eval_result.code != 200}'
+            raise: '${"eval GCF failed: " + json.encode_to_string(eval_result.body)}'
 
     - done:
         return:
           status: "success"
-          month_id: ${month_id}
-          eval_month_id: ${eval_month_id}
-          financial_update: ${financial_update_result.status}
-          edgar_disclosure: ${edgar_disclosure_result.status}
-          screener: ${screener_result.status}
-          eval: ${eval_result.body}
+          month_id: '${month_id}'
+          eval_month_id: '${eval_month_id}'
+          financial_update: '${financial_update_result.status}'
+          edgar_disclosure: '${edgar_disclosure_result.status}'
+          screener: '${screener_result.status}'
+          eval: '${eval_result.body}'

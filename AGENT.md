@@ -12,7 +12,7 @@ No human-in-the-loop. Fully automated via Cloud Workflows. All LLM providers and
 
 ```
 Cloud Scheduler (monthly)
-  └─► sp500-monthly-pipeline (Cloud Workflows)
+  └─► stock-screener-monthly-pipeline (Cloud Workflows)
         Step 1: financial_update_job   — refresh FCF + EBITDA/EV for all tickers
         Step 2: edgar_disclosure_job   — index 10-K/10-Q filings into vector store
         Step 3: screener_job           — score + debate + email + write picks

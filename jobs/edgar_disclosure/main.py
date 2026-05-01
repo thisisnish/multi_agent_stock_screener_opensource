@@ -28,7 +28,6 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    from screener.edgar.retriever import EDGARRetriever
     from screener.lib.config_loader import load_config
     from screener.lib.storage.firestore import FirestoreDAO
 
@@ -60,7 +59,12 @@ def main() -> None:
 
     logger.info("indexing EDGAR filings for %d tickers", len(tickers))
 
-    retriever = EDGARRetriever(app_config=app_config, dao=dao)
+    try:
+        from screener.edgar.retriever import EDGARRetriever
+        retriever = EDGARRetriever(app_config=app_config, dao=dao)
+    except (ImportError, AttributeError):
+        logger.warning("EDGARRetriever not implemented — skipping EDGAR indexing (see TB-07)")
+        return
 
     success = 0
     errors = 0

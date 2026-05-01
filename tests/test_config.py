@@ -70,6 +70,24 @@ def test_interpolate_non_string_passthrough():
     assert _interpolate(None) is None
 
 
+def test_interpolate_default_used_when_var_unset():
+    """${VAR:-fallback} should return the fallback when the var is not set."""
+    os.environ.pop("UNSET_OPTIONAL_VAR", None)
+    assert _interpolate("${UNSET_OPTIONAL_VAR:-my-default}") == "my-default"
+
+
+def test_interpolate_default_empty_string_when_var_unset():
+    """${VAR:-} should return '' (empty string) when the var is not set."""
+    os.environ.pop("UNSET_OPTIONAL_VAR", None)
+    assert _interpolate("${UNSET_OPTIONAL_VAR:-}") == ""
+
+
+def test_interpolate_env_value_takes_precedence_over_default(monkeypatch):
+    """${VAR:-fallback} should return the live env value when the var IS set."""
+    monkeypatch.setenv("OPTIONAL_VAR_SET", "live-value")
+    assert _interpolate("${OPTIONAL_VAR_SET:-default-ignored}") == "live-value"
+
+
 # ---------------------------------------------------------------------------
 # load_config — happy path
 # ---------------------------------------------------------------------------

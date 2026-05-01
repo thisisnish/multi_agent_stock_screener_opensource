@@ -44,12 +44,12 @@ storage:
   s3:
     # Used when provider = "s3".  Brute-force cosine search is viable at
     # S&P 500 scale (~10 k EDGAR chunks).
-    bucket: "${S3_BUCKET_NAME}"
+    bucket: "${S3_BUCKET_NAME:-}"
     region: "us-east-1"
 
   opensearch:
     # Used when provider = "opensearch".  Requires the k-NN plugin.
-    host: "${OPENSEARCH_HOST}"
+    host: "${OPENSEARCH_HOST:-}"
     port: 9200
     index: "stock-screener-chunks"
 

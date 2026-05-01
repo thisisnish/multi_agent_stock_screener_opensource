@@ -249,7 +249,11 @@ def eval_handler(request: "flask.Request") -> tuple[str, int]:
         month_id: str | None = payload.get("month_id") or os.environ.get("MONTH_ID")
         if not month_id:
             return (
-                json.dumps({"error": "month_id is required in request body or MONTH_ID env var"}),
+                json.dumps(
+                    {
+                        "error": "month_id is required in request body or MONTH_ID env var"
+                    }
+                ),
                 400,
             )
 

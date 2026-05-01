@@ -31,7 +31,9 @@ def main() -> None:
     from screener.lib.config_loader import load_config
     from screener.lib.storage.firestore import FirestoreDAO
 
-    month_id = os.environ.get("MONTH_ID") or datetime.now(timezone.utc).strftime("%Y-%m")
+    month_id = os.environ.get("MONTH_ID") or datetime.now(timezone.utc).strftime(
+        "%Y-%m"
+    )
     dry_run = os.environ.get("DRY_RUN", "false").lower() in ("1", "true", "yes")
 
     logger.info("screener_job starting — month_id=%s dry_run=%s", month_id, dry_run)
@@ -123,7 +125,9 @@ def main() -> None:
     for pick in picks:
         symbol = pick["symbol"]
         try:
-            result = graph.invoke({"ticker": symbol, "month_id": month_id, "signals": pick})
+            result = graph.invoke(
+                {"ticker": symbol, "month_id": month_id, "signals": pick}
+            )
             verdicts.append(result)
         except Exception:
             logger.exception("debate failed for %s — skipping", symbol)
@@ -135,7 +139,11 @@ def main() -> None:
         import asyncio
 
         async def _write_picks() -> None:
-            from screener.lib.storage.schema import PICKS, current_week_id, pick_ledger_doc_id
+            from screener.lib.storage.schema import (
+                PICKS,
+                current_week_id,
+                pick_ledger_doc_id,
+            )
 
             week_id = current_week_id()
             for verdict in verdicts:
@@ -154,7 +162,9 @@ def main() -> None:
     else:
         logger.info("dry_run=True — skipping storage writes and email")
 
-    logger.info("screener_job complete — month_id=%s verdicts=%d", month_id, len(verdicts))
+    logger.info(
+        "screener_job complete — month_id=%s verdicts=%d", month_id, len(verdicts)
+    )
 
 
 if __name__ == "__main__":

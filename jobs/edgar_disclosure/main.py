@@ -32,10 +32,14 @@ def main() -> None:
     from screener.lib.config_loader import load_config
     from screener.lib.storage.firestore import FirestoreDAO
 
-    month_id = os.environ.get("MONTH_ID") or datetime.now(timezone.utc).strftime("%Y-%m")
+    month_id = os.environ.get("MONTH_ID") or datetime.now(timezone.utc).strftime(
+        "%Y-%m"
+    )
     dry_run = os.environ.get("DRY_RUN", "false").lower() in ("1", "true", "yes")
 
-    logger.info("edgar_disclosure_job starting — month_id=%s dry_run=%s", month_id, dry_run)
+    logger.info(
+        "edgar_disclosure_job starting — month_id=%s dry_run=%s", month_id, dry_run
+    )
 
     app_config = load_config()
     dao = FirestoreDAO(

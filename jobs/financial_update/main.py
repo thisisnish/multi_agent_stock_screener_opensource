@@ -30,10 +30,14 @@ def main() -> None:
     from screener.metrics.ebitda_ev import fetch_ebitda_ev
     from screener.metrics.fcf_yield import fetch_fcf_yield
 
-    month_id = os.environ.get("MONTH_ID") or datetime.now(timezone.utc).strftime("%Y-%m")
+    month_id = os.environ.get("MONTH_ID") or datetime.now(timezone.utc).strftime(
+        "%Y-%m"
+    )
     dry_run = os.environ.get("DRY_RUN", "false").lower() in ("1", "true", "yes")
 
-    logger.info("financial_update_job starting — month_id=%s dry_run=%s", month_id, dry_run)
+    logger.info(
+        "financial_update_job starting — month_id=%s dry_run=%s", month_id, dry_run
+    )
 
     app_config = load_config()
     # DAO is instantiated here to validate credentials at startup; individual

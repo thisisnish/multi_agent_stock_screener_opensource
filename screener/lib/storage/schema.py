@@ -4,7 +4,7 @@ Pydantic document schemas for the multi-agent stock screener.
 
 Collection layout (mirrors the private reference implementation):
 
-    tickers/     — per-ticker signal data (sp500_ticker_signals in the private project)
+    tickers/     — per-ticker signal data (stock-screener_ticker_signals in the private project)
     memory/      — per-ticker episodic memory for the Judge feedback loop (ticker_memory)
     picks/       — weekly screener top-N snapshots (screener_picks)
     performance/ — weekly P&L snapshots and pick ledger (screener_performance, pick_ledger)

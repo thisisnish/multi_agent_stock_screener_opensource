@@ -248,7 +248,7 @@ Builds Docker images for each job, pushes to Artifact Registry, and redeploys al
 
 To run the full pipeline manually from the console:
 
-1. Go to Cloud Workflows → `sp500-monthly-pipeline` → Execute
+1. Go to Cloud Workflows → `stock-screener-monthly-pipeline` → Execute
 2. Or trigger individual jobs from Cloud Run → Jobs → Run Job
 
 ---

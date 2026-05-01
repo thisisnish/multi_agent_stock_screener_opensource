@@ -50,17 +50,28 @@ class ConfigError(RuntimeError):
 # Env-var interpolation
 # ---------------------------------------------------------------------------
 
-_ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+# Matches both ${VAR} and ${VAR:-default} forms.
+# Group 1: variable name
+# Group 2: default value (present only for the ${VAR:-default} form, may be empty string)
+_ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}")
 
 
 def _interpolate(value: object) -> object:
-    """Recursively resolve ${VAR_NAME} placeholders in strings, lists, dicts."""
+    """Recursively resolve ${VAR_NAME} and ${VAR_NAME:-default} placeholders.
+
+    - ``${VAR}``          — substitutes the env var value; raises ConfigError if unset.
+    - ``${VAR:-default}`` — substitutes the env var value when set, otherwise
+                            substitutes *default* (which may be an empty string).
+    """
     if isinstance(value, str):
 
         def _replace(match: re.Match) -> str:
             var = match.group(1)
+            has_default = match.group(2) is not None
             resolved = os.environ.get(var)
             if resolved is None:
+                if has_default:
+                    return match.group(2)  # may be "" for ${VAR:-}
                 raise ConfigError(
                     f"Config references env var '${{{var}}}' but it is not set. "
                     f"Check your .env file or environment."

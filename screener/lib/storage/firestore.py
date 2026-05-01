@@ -21,6 +21,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from google.api_core.exceptions import NotFound
@@ -40,6 +41,12 @@ _EMBEDDING_FIELD = "embedding"
 class FirestoreDAO(StorageDAO):
     """Async Firestore implementation of :class:`StorageDAO`.
 
+    On Cloud Run the attached service account provides credentials
+    automatically via Application Default Credentials (ADC).
+    ``GOOGLE_APPLICATION_CREDENTIALS`` must therefore *not* be set in the
+    container environment; if it is set to an empty string the variable is
+    treated as absent and ADC is used instead.
+
     Args:
         project_id: GCP project ID.
         database: Firestore named database ID (e.g. ``"multi-agent-stock-screener"``).
@@ -49,6 +56,21 @@ class FirestoreDAO(StorageDAO):
     def __init__(self, project_id: str, database: str = "(default)") -> None:
         self._project_id = project_id
         self._database = database
+
+        # Never pass an explicit credentials path when GOOGLE_APPLICATION_CREDENTIALS
+        # is absent or empty — let the google-auth ADC chain resolve credentials
+        # automatically (service-account token on Cloud Run, gcloud on local dev).
+        # Only log a warning when the variable is set to a non-empty value so
+        # operators can spot a misconfigured container immediately.
+        creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+        if creds_path:
+            logger.warning(
+                "GOOGLE_APPLICATION_CREDENTIALS is set to '%s'; "
+                "on Cloud Run this should be unset — the attached service account "
+                "provides credentials via ADC automatically.",
+                creds_path,
+            )
+
         self._client: AsyncClient = firestore.AsyncClient(
             project=project_id,
             database=database,

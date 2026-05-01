@@ -128,7 +128,7 @@ class TestFirestoreDAOGet:
         doc_ref.get = AsyncMock(return_value=snap)
         mock_client.collection.return_value.document.return_value = doc_ref
 
-        result = asyncio.get_event_loop().run_until_complete(dao.get(TICKERS, "AAPL"))
+        result = asyncio.run(dao.get(TICKERS, "AAPL"))
 
         assert result == {"symbol": "AAPL", "score": 72.4}
         mock_client.collection.assert_called_with(TICKERS)
@@ -142,7 +142,7 @@ class TestFirestoreDAOGet:
         doc_ref.get = AsyncMock(return_value=snap)
         mock_client.collection.return_value.document.return_value = doc_ref
 
-        result = asyncio.get_event_loop().run_until_complete(dao.get(TICKERS, "ZZZZ"))
+        result = asyncio.run(dao.get(TICKERS, "ZZZZ"))
 
         assert result is None
 
@@ -161,7 +161,7 @@ class TestFirestoreDAOSet:
         mock_client.collection.return_value.document.return_value = doc_ref
 
         payload = {"symbol": "TSLA", "score": 55.0}
-        asyncio.get_event_loop().run_until_complete(dao.set(TICKERS, "TSLA", payload))
+        asyncio.run(dao.set(TICKERS, "TSLA", payload))
 
         doc_ref.set.assert_awaited_once_with(payload)
 
@@ -172,9 +172,7 @@ class TestFirestoreDAOSet:
         doc_ref.set = AsyncMock(return_value=None)
         mock_client.collection.return_value.document.return_value = doc_ref
 
-        asyncio.get_event_loop().run_until_complete(
-            dao.set(MEMORY, "AAPL", {"ticker": "AAPL"})
-        )
+        asyncio.run(dao.set(MEMORY, "AAPL", {"ticker": "AAPL"}))
 
         mock_client.collection.assert_called_with(MEMORY)
         mock_client.collection.return_value.document.assert_called_with("AAPL")
@@ -193,7 +191,7 @@ class TestFirestoreDAODelete:
         doc_ref.delete = AsyncMock(return_value=None)
         mock_client.collection.return_value.document.return_value = doc_ref
 
-        asyncio.get_event_loop().run_until_complete(dao.delete(PICKS, "picks_202618"))
+        asyncio.run(dao.delete(PICKS, "picks_202618"))
 
         doc_ref.delete.assert_awaited_once()
 
@@ -207,9 +205,7 @@ class TestFirestoreDAODelete:
         mock_client.collection.return_value.document.return_value = doc_ref
 
         # Must not raise
-        asyncio.get_event_loop().run_until_complete(
-            dao.delete(PICKS, "nonexistent_doc")
-        )
+        asyncio.run(dao.delete(PICKS, "nonexistent_doc"))
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +230,7 @@ class TestFirestoreDAOQuery:
         where_chain.where.return_value = final_query
         mock_client.collection.return_value.where.return_value = where_chain
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             dao.query(PERFORMANCE, {"status": "active", "ticker": "AAPL"})
         )
 
@@ -249,7 +245,7 @@ class TestFirestoreDAOQuery:
         snap2 = _make_snap(exists=True, data={"symbol": "MSFT"})
         mock_client.collection.return_value.get = AsyncMock(return_value=[snap1, snap2])
 
-        result = asyncio.get_event_loop().run_until_complete(dao.query(TICKERS, {}))
+        result = asyncio.run(dao.query(TICKERS, {}))
 
         assert len(result) == 2
 
@@ -262,7 +258,7 @@ class TestFirestoreDAOQuery:
             return_value=[snap_ok, snap_bad]
         )
 
-        result = asyncio.get_event_loop().run_until_complete(dao.query(TICKERS, {}))
+        result = asyncio.run(dao.query(TICKERS, {}))
 
         assert len(result) == 1
         assert result[0]["symbol"] == "AAPL"
@@ -288,9 +284,7 @@ class TestFirestoreDAOVectorSearch:
         self._setup_vector_query(mock_client, [])
 
         embedding = [0.1, 0.2, 0.3]
-        asyncio.get_event_loop().run_until_complete(
-            dao.vector_search(CHUNKS, embedding, top_k=5, threshold=0.7)
-        )
+        asyncio.run(dao.vector_search(CHUNKS, embedding, top_k=5, threshold=0.7))
 
         mock_client.collection.return_value.find_nearest.assert_called_once_with(
             vector_field="embedding",
@@ -309,7 +303,7 @@ class TestFirestoreDAOVectorSearch:
 
         self._setup_vector_query(mock_client, [snap_keep, snap_drop])
 
-        results = asyncio.get_event_loop().run_until_complete(
+        results = asyncio.run(
             dao.vector_search(CHUNKS, [0.1, 0.2], top_k=5, threshold=0.7)
         )
 
@@ -322,9 +316,7 @@ class TestFirestoreDAOVectorSearch:
         snap = _make_snap(exists=True, data={"text": "hello"}, distance=0.2)
         self._setup_vector_query(mock_client, [snap])
 
-        results = asyncio.get_event_loop().run_until_complete(
-            dao.vector_search(CHUNKS, [0.1], top_k=3, threshold=0.5)
-        )
+        results = asyncio.run(dao.vector_search(CHUNKS, [0.1], top_k=3, threshold=0.5))
 
         assert "_score" in results[0]
         assert abs(results[0]["_score"] - 0.8) < 1e-5
@@ -333,7 +325,7 @@ class TestFirestoreDAOVectorSearch:
         dao, mock_client = _make_dao()
         self._setup_vector_query(mock_client, [])
 
-        results = asyncio.get_event_loop().run_until_complete(
+        results = asyncio.run(
             dao.vector_search(CHUNKS, [0.0, 1.0], top_k=5, threshold=0.7)
         )
 
@@ -346,9 +338,7 @@ class TestFirestoreDAOVectorSearch:
         snap_bad = _make_snap(exists=False)
         self._setup_vector_query(mock_client, [snap_ok, snap_bad])
 
-        results = asyncio.get_event_loop().run_until_complete(
-            dao.vector_search(CHUNKS, [0.1], top_k=5, threshold=0.5)
-        )
+        results = asyncio.run(dao.vector_search(CHUNKS, [0.1], top_k=5, threshold=0.5))
 
         assert len(results) == 1
 
@@ -363,7 +353,7 @@ class TestFirestoreDAOClose:
         dao, mock_client = _make_dao()
         mock_client.close = MagicMock()
 
-        asyncio.get_event_loop().run_until_complete(dao.close())
+        asyncio.run(dao.close())
 
         mock_client.close.assert_called_once()
 
@@ -371,8 +361,8 @@ class TestFirestoreDAOClose:
         dao, mock_client = _make_dao()
         mock_client.close = MagicMock()
 
-        asyncio.get_event_loop().run_until_complete(dao.close())
-        asyncio.get_event_loop().run_until_complete(dao.close())
+        asyncio.run(dao.close())
+        asyncio.run(dao.close())
 
         # close() on the underlying client should only be called once
         mock_client.close.assert_called_once()

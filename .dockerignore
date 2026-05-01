@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------------------
+# .dockerignore — files excluded from every Docker build context.
+#
+# IMPORTANT: .env files must never be baked into a Cloud Run image.
+# On Cloud Run the attached service account (cloudrun-jobs) provides
+# credentials via ADC automatically.  A baked-in .env with
+# GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json would
+# override ADC and cause an immediate DefaultCredentialsError crash.
+# ---------------------------------------------------------------------------
+
+# Config YAML files — served from GCS at runtime, not baked into the image.
+# See deploy/deploy_all.sh for the gsutil upload step.
+config/
+
+# Local secrets / dotenv files — never ship these in an image
+.env
+.env.*
+!.env.example
+
+# Python byte-code and caches
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor / OS metadata
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git internals
+.git/
+.gitignore
+
+# Test artefacts
+htmlcov/
+.coverage
+coverage.xml
+
+# Local notebooks / scratch files
+*.ipynb
+
+# CI config (not needed at runtime)
+.github/

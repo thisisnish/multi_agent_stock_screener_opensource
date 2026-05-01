@@ -44,12 +44,12 @@ storage:
   s3:
     # Used when provider = "s3".  Brute-force cosine search is viable at
     # S&P 500 scale (~10 k EDGAR chunks).
-    bucket: "${S3_BUCKET_NAME}"
+    bucket: "${S3_BUCKET_NAME:-}"
     region: "us-east-1"
 
   opensearch:
     # Used when provider = "opensearch".  Requires the k-NN plugin.
-    host: "${OPENSEARCH_HOST}"
+    host: "${OPENSEARCH_HOST:-}"
     port: 9200
     index: "stock-screener-chunks"
 
@@ -86,11 +86,11 @@ notifications:
     enabled: true
 
     # Resend sender address.  Must be a verified domain in your Resend account.
-    from_address: "screener@yourdomain.com"
+    from_address: "${EMAIL_FROM_ADDRESS:-}"
 
     # List of recipient email addresses.
     recipients:
-      - "you@example.com"
+      - "${EMAIL_TO_ADDRESS:-}"
 
     # Subject prefix for monthly reports.
     subject_prefix: "[Stock Screener]"

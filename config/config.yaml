@@ -26,7 +26,9 @@ llm:
 
   # Embedding model used for EDGAR 10-K/10-Q vector indexing.
   # Must produce 3072-dimensional vectors to match the Firestore native index.
-  embedder_model: "google_genai:models/gemini-embedding-001"
+  # Using OpenAI text-embedding-3-large (3072 dims) — avoids Gemini free-tier
+  # daily cap of 1000 requests which is exhausted by a single 10-ticker run.
+  embedder_model: "openai:text-embedding-3-large"
 
 # ---------------------------------------------------------------------------
 # Storage backend

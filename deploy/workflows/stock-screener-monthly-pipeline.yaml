@@ -66,9 +66,9 @@ main:
                 - financial_update_poll_count: '${financial_update_poll_count + 1}'
           - check_financial_update_status:
               switch:
-                - condition: '${financial_update_op_response.body.done == true and map.get(financial_update_op_response.body, "error") != null}'
+                - condition: '${default(map.get(financial_update_op_response.body, "done"), false) == true and map.get(financial_update_op_response.body, "error") != null}'
                   next: financial_update_failed
-                - condition: '${financial_update_op_response.body.done == true}'
+                - condition: '${default(map.get(financial_update_op_response.body, "done"), false) == true}'
                   next: trigger_edgar_disclosure
               next: poll_financial_update
 
@@ -96,7 +96,7 @@ main:
         assign:
           - edgar_disclosure_operation_name: '${edgar_disclosure_run_response.body.name}'
           - edgar_disclosure_poll_count: 0
-          - edgar_disclosure_poll_limit: 240
+          - edgar_disclosure_poll_limit: 480
 
     - poll_edgar_disclosure:
         switch:
@@ -123,16 +123,21 @@ main:
                 - edgar_disclosure_poll_count: '${edgar_disclosure_poll_count + 1}'
           - check_edgar_disclosure_status:
               switch:
-                - condition: '${edgar_disclosure_op_response.body.done == true and map.get(edgar_disclosure_op_response.body, "error") != null}'
+                - condition: '${default(map.get(edgar_disclosure_op_response.body, "done"), false) == true and map.get(edgar_disclosure_op_response.body, "error") != null}'
                   next: edgar_disclosure_failed
-                - condition: '${edgar_disclosure_op_response.body.done == true}'
+                - condition: '${default(map.get(edgar_disclosure_op_response.body, "done"), false) == true}'
                   next: trigger_screener
               next: poll_edgar_disclosure
 
     - edgar_disclosure_timed_out:
-        raise:
-          code: 504
-          message: "edgar-disclosure-job timed out after polling limit"
+        steps:
+          - log_edgar_timeout:
+              call: sys.log
+              args:
+                text: "edgar-disclosure-job timed out — continuing with existing EDGAR data in Firestore"
+                severity: WARNING
+          - continue_after_edgar_timeout:
+              next: trigger_screener
 
     - edgar_disclosure_failed:
         raise:
@@ -180,9 +185,9 @@ main:
                 - screener_poll_count: '${screener_poll_count + 1}'
           - check_screener_status:
               switch:
-                - condition: '${screener_op_response.body.done == true and map.get(screener_op_response.body, "error") != null}'
+                - condition: '${default(map.get(screener_op_response.body, "done"), false) == true and map.get(screener_op_response.body, "error") != null}'
                   next: screener_failed
-                - condition: '${screener_op_response.body.done == true}'
+                - condition: '${default(map.get(screener_op_response.body, "done"), false) == true}'
                   next: derive_eval_month
               next: poll_screener
 

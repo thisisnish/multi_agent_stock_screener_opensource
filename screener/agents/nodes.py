@@ -27,6 +27,7 @@ make_memory_write_node(dao) -> Callable
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -126,17 +127,32 @@ def make_build_context_node(dao: "StorageDAO", app_config: "AppConfig"):
         ticker = state["ticker"]
         edgar_cfg = app_config.edgar
 
-        # Lazy import — avoid hard dependency at module load time
-        try:
-            from langchain_google_genai import GoogleGenerativeAIEmbeddings  # type: ignore[import]
+        # Lazy import — route on provider prefix to select the correct embedder package
+        raw_model = app_config.llm.embedder_model
+        provider, model_id = (
+            raw_model.split(":", 1) if ":" in raw_model else ("google_genai", raw_model)
+        )
 
-            # embedder_model is "google_genai:models/gemini-embedding-001" — strip provider prefix
-            raw_model = app_config.llm.embedder_model
-            model_id = raw_model.split(":", 1)[1] if ":" in raw_model else raw_model
-            embedder = GoogleGenerativeAIEmbeddings(model=model_id)
+        try:
+            if provider == "openai":
+                from langchain_openai import OpenAIEmbeddings  # type: ignore[import]
+
+                embedder = OpenAIEmbeddings(model=model_id)
+            elif provider == "google_genai":
+                from langchain_google_genai import GoogleGenerativeAIEmbeddings  # type: ignore[import]
+
+                embedder = GoogleGenerativeAIEmbeddings(model=model_id)
+            else:
+                logger.warning(
+                    "Unknown embedder provider '%s'; skipping EDGAR retrieval for %s",
+                    provider,
+                    ticker,
+                )
+                return {"disclosure_block": None}
         except ImportError:
             logger.warning(
-                "langchain_google_genai not installed; skipping EDGAR retrieval for %s",
+                "Embedder package for provider '%s' not installed; skipping EDGAR retrieval for %s",
+                provider,
                 ticker,
             )
             return {"disclosure_block": None}
@@ -170,7 +186,7 @@ def make_build_context_node(dao: "StorageDAO", app_config: "AppConfig"):
 def make_debate_node(app_config: "AppConfig"):
     """Build the debate_node, capturing app_config.
 
-    Runs Bull and Bear agents in parallel using LangChain's RunnableParallel,
+    Runs Bull and Bear agents in parallel using asyncio.gather,
     injecting signal data and EDGAR disclosures into both contexts.
 
     Args:
@@ -181,8 +197,6 @@ def make_debate_node(app_config: "AppConfig"):
     """
 
     async def debate_node(state: DebateState) -> dict:
-        from langchain_core.runnables import RunnableParallel  # type: ignore[import]
-
         ticker = state["ticker"]
         ticker_name = state.get("ticker_name", ticker)
         signals = state.get("signals", {})
@@ -208,11 +222,11 @@ def make_debate_node(app_config: "AppConfig"):
             HumanMessage(content=context),
         ]
 
-        parallel = RunnableParallel(
-            bull=bull_llm,
-            bear=bear_llm,
+        bull_output, bear_output = await asyncio.gather(
+            bull_llm.ainvoke(bull_messages),
+            bear_llm.ainvoke(bear_messages),
         )
-        outputs = await parallel.ainvoke({"bull": bull_messages, "bear": bear_messages})
+        outputs = {"bull": bull_output, "bear": bear_output}
 
         logger.debug(
             "Debate complete for ticker=%s: bull_citations=%s bear_citations=%s",

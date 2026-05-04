@@ -24,6 +24,12 @@
 
 set -euo pipefail
 
+# Source .env if present so EMAIL_FROM_ADDRESS / EMAIL_TO_ADDRESS and any
+# other local overrides are available throughout the script.
+if [[ -f ".env" ]]; then
+  set -a; source .env; set +a
+fi
+
 # ---------------------------------------------------------------------------
 # Configuration — override via environment variables
 # ---------------------------------------------------------------------------
@@ -104,7 +110,7 @@ deploy_cloud_run_job() {
     secrets_flag=$(IFS=,; echo "${secret_args[*]}")
 
     # Pass non-secret config as plain env vars
-    local env_vars="GCP_PROJECT_ID=${PROJECT_ID},GCS_CONFIG_BUCKET=${GCS_CONFIG_BUCKET}"
+    local env_vars="GCP_PROJECT_ID=${PROJECT_ID},GCS_CONFIG_BUCKET=${GCS_CONFIG_BUCKET},EMAIL_FROM_ADDRESS=${EMAIL_FROM_ADDRESS:-},EMAIL_TO_ADDRESS=${EMAIL_TO_ADDRESS:-}"
 
     if gcloud run jobs describe "${job_name}" \
         --region="${REGION}" \

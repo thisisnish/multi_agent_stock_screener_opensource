@@ -51,13 +51,21 @@ def _min_sector(base_value: float = 0.05, sector: str = SECTOR_A) -> tuple[dict,
 
 class TestBasicScoring:
     def test_median_ticker_scores_near_50(self):
-        signals, sector_map = _min_sector()
+        signals, sector_map = _make_sector(
+            [f"S{i}" for i in range(5)],
+            [0.05 + i * 0.01 for i in range(5)],
+            SECTOR_A,
+        )
         scores = sector_z_scores(signals, VALUE_KEY, sector_map)
         median_sym = "S2"  # middle of 5
         assert scores[median_sym] == pytest.approx(50.0, abs=5.0)
 
     def test_high_value_above_50(self):
-        signals, sector_map = _min_sector()
+        signals, sector_map = _make_sector(
+            [f"S{i}" for i in range(5)],
+            [0.05 + i * 0.01 for i in range(5)],
+            SECTOR_A,
+        )
         scores = sector_z_scores(signals, VALUE_KEY, sector_map)
         # S4 has the highest value
         assert scores["S4"] > 50.0
@@ -96,14 +104,14 @@ class TestBasicScoring:
 
 class TestDegenerateSectors:
     def test_std_zero_all_none(self):
-        """All tickers have identical values → std=0 → all None."""
+        """All tickers have identical values → std=0 → all return neutral 50.0."""
         symbols = [f"S{i}" for i in range(MIN_SECTOR_SIZE)]
         signals = {sym: _signal(0.05) for sym in symbols}
         sector_map = {sym: SECTOR_A for sym in symbols}
 
         scores = sector_z_scores(signals, VALUE_KEY, sector_map)
         for sym in symbols:
-            assert scores[sym] is None
+            assert scores[sym] == pytest.approx(50.0)
 
     def test_sector_below_min_size_all_none(self):
         """Fewer than MIN_SECTOR_SIZE valid tickers → all None."""

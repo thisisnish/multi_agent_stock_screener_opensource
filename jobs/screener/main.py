@@ -130,7 +130,9 @@ def main() -> None:
 
     # Step 2 — normalize + score
     weights = app_config.signals.weights
-    sector_map = {entry["symbol"]: entry.get("sector", "Unknown") for entry in raw_signals}
+    sector_map = {
+        entry["symbol"]: entry.get("sector", "Unknown") for entry in raw_signals
+    }
     signals_by_symbol = {entry["symbol"]: entry for entry in raw_signals}
 
     # Normalize each factor independently via sector z-scores, then combine.
@@ -179,7 +181,9 @@ def main() -> None:
             # All factors skipped — cannot score this symbol
             continue
 
-        raw_composite = weighted_sum / total_weight if total_weight < 1.0 else weighted_sum
+        raw_composite = (
+            weighted_sum / total_weight if total_weight < 1.0 else weighted_sum
+        )
 
         gate = apply_gate(
             sig.get("technical", {}).get("price", 0) or 0,
@@ -241,6 +245,7 @@ def main() -> None:
 
     # Step 5 — write picks + email
     if not dry_run:
+
         async def _write_picks() -> None:
             from screener.lib.storage.schema import (
                 PICKS,

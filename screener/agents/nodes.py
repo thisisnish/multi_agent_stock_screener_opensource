@@ -129,14 +129,18 @@ def make_build_context_node(dao: "StorageDAO", app_config: "AppConfig"):
 
         # Lazy import — route on provider prefix to select the correct embedder package
         raw_model = app_config.llm.embedder_model
-        provider, model_id = raw_model.split(":", 1) if ":" in raw_model else ("google_genai", raw_model)
+        provider, model_id = (
+            raw_model.split(":", 1) if ":" in raw_model else ("google_genai", raw_model)
+        )
 
         try:
             if provider == "openai":
                 from langchain_openai import OpenAIEmbeddings  # type: ignore[import]
+
                 embedder = OpenAIEmbeddings(model=model_id)
             elif provider == "google_genai":
                 from langchain_google_genai import GoogleGenerativeAIEmbeddings  # type: ignore[import]
+
                 embedder = GoogleGenerativeAIEmbeddings(model=model_id)
             else:
                 logger.warning(

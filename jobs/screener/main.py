@@ -208,24 +208,39 @@ def main() -> None:
     logger.info("selected top %d tickers for debate", len(picks))
 
     # Step 4 — multi-agent debate
+    # Enrich picks with fields required by build_picks_table_html before debate
+    # so the same dicts flow cleanly into the email step.
+    for i, pick in enumerate(picks, start=1):
+        pick["rank"] = i
+        pick["score"] = pick.get("composite_score")
+        technical = pick.get("technical") or {}
+        pick.setdefault("rsi", technical.get("rsi") or 0.0)
+        pick.setdefault("price", technical.get("price") or 0.0)
+
+    import asyncio
+
     graph = build_debate_graph(app_config=app_config, dao=dao)
     verdicts: list[dict] = []
-    for pick in picks:
-        symbol = pick["symbol"]
-        try:
-            result = graph.invoke(
-                {"ticker": symbol, "month_id": month_id, "signals": pick}
-            )
-            verdicts.append(result)
-        except Exception:
-            logger.exception("debate failed for %s — skipping", symbol)
+
+    async def _run_debates() -> list[dict]:
+        results = []
+        for pick in picks:
+            symbol = pick["symbol"]
+            try:
+                result = await graph.ainvoke(
+                    {"ticker": symbol, "month_id": month_id, "signals": pick}
+                )
+                results.append(result)
+            except Exception:
+                logger.exception("debate failed for %s — skipping", symbol)
+        return results
+
+    verdicts = asyncio.run(_run_debates())
 
     logger.info("debate complete — %d verdicts", len(verdicts))
 
     # Step 5 — write picks + email
     if not dry_run:
-        import asyncio
-
         async def _write_picks() -> None:
             from screener.lib.storage.schema import (
                 PICKS,

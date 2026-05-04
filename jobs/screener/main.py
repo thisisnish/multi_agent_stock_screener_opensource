@@ -95,7 +95,7 @@ def main() -> None:
 
     # Import here to avoid paying startup cost if config/ticker load fails
     from screener.agents.graph import build_debate_graph
-    from screener.lib.email_sender import send_report
+    from screener.lib.email_sender import send_email
     from screener.lib.normalizer import normalize_signals
     from screener.metrics.earnings_yield import fetch_earnings_yield
     from screener.metrics.ebitda_ev import fetch_ebitda_ev
@@ -187,7 +187,7 @@ def main() -> None:
         logger.info("picks written to storage")
 
         if app_config.notifications.email.enabled:
-            send_report(app_config=app_config, verdicts=verdicts, month_id=month_id)
+            send_email(cfg=app_config, picks=picks, date=month_id, verdicts=verdicts)
             logger.info("email report sent")
         else:
             logger.info("email disabled in config — skipping")

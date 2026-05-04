@@ -95,13 +95,13 @@ def main() -> None:
 
     # Import here to avoid paying startup cost if config/ticker load fails
     from screener.agents.graph import build_debate_graph
-    from screener.lib.email_sender import send_report
-    from screener.lib.normalizer import normalize_signals
+    from screener.lib.email_sender import send_email
+    from screener.lib.normalizer import sector_z_scores
     from screener.metrics.earnings_yield import fetch_earnings_yield
     from screener.metrics.ebitda_ev import fetch_ebitda_ev
     from screener.metrics.fcf_yield import fetch_fcf_yield
-    from screener.metrics.ma200_gate import apply_ma200_gate
-    from screener.metrics.technical import fetch_technical_signal
+    from screener.metrics.ma200_gate import apply_gate
+    from screener.metrics.technical import compute_score
 
     # Step 1 — fetch signals
     raw_signals: list[dict] = []
@@ -109,10 +109,10 @@ def main() -> None:
         symbol = entry["symbol"]
         sector = entry.get("sector", "Unknown")
         try:
-            technical = fetch_technical_signal(symbol)
-            earnings = fetch_earnings_yield(symbol)
-            fcf = fetch_fcf_yield(symbol)
-            ebitda = fetch_ebitda_ev(symbol)
+            technical = compute_score(symbol, None)
+            earnings = fetch_earnings_yield([symbol]).get(symbol, {})
+            fcf = fetch_fcf_yield([symbol]).get(symbol, {})
+            ebitda = fetch_ebitda_ev([symbol]).get(symbol, {})
             raw_signals.append(
                 {
                     "symbol": symbol,
@@ -130,8 +130,68 @@ def main() -> None:
 
     # Step 2 — normalize + score
     weights = app_config.signals.weights
-    scored = normalize_signals(raw_signals, weights)
-    gated = [apply_ma200_gate(entry) for entry in scored]
+    sector_map = {
+        entry["symbol"]: entry.get("sector", "Unknown") for entry in raw_signals
+    }
+    signals_by_symbol = {entry["symbol"]: entry for entry in raw_signals}
+
+    # Normalize each factor independently via sector z-scores, then combine.
+    # sector_z_scores expects {symbol: sub_dict} where each sub_dict has the
+    # value_key field and a "skipped" field.
+    factor_scores: dict[str, dict[str, float | None]] = {
+        "technical": sector_z_scores(
+            {sym: sig["technical"] for sym, sig in signals_by_symbol.items()},
+            "score",
+            sector_map,
+        ),
+        "earnings": sector_z_scores(
+            {sym: sig["earnings"] for sym, sig in signals_by_symbol.items()},
+            "earnings_yield",
+            sector_map,
+        ),
+        "fcf": sector_z_scores(
+            {sym: sig["fcf"] for sym, sig in signals_by_symbol.items()},
+            "fcf_yield",
+            sector_map,
+        ),
+        "ebitda": sector_z_scores(
+            {sym: sig["ebitda"] for sym, sig in signals_by_symbol.items()},
+            "ebitda_ev",
+            sector_map,
+        ),
+    }
+    factor_weights = {
+        "technical": weights.technical,
+        "earnings": weights.earnings,
+        "fcf": weights.fcf,
+        "ebitda": weights.ebitda,
+    }
+
+    gated: list[dict] = []
+    for sym, sig in signals_by_symbol.items():
+        weighted_sum = 0.0
+        total_weight = 0.0
+        for factor, factor_weight in factor_weights.items():
+            score = factor_scores[factor].get(sym)
+            if score is not None:
+                weighted_sum += score * factor_weight
+                total_weight += factor_weight
+
+        if total_weight == 0.0:
+            # All factors skipped — cannot score this symbol
+            continue
+
+        raw_composite = (
+            weighted_sum / total_weight if total_weight < 1.0 else weighted_sum
+        )
+
+        gate = apply_gate(
+            sig.get("technical", {}).get("price", 0) or 0,
+            sig.get("technical", {}).get("ma200", 0) or 0,
+        )
+        composite_score = raw_composite * gate["multiplier"]
+
+        gated.append({**sig, "composite_score": composite_score, "ma200_gate": gate})
 
     # Step 3 — top-N with sector cap
     top_n: int = app_config.screener.top_n
@@ -152,23 +212,39 @@ def main() -> None:
     logger.info("selected top %d tickers for debate", len(picks))
 
     # Step 4 — multi-agent debate
+    # Enrich picks with fields required by build_picks_table_html before debate
+    # so the same dicts flow cleanly into the email step.
+    for i, pick in enumerate(picks, start=1):
+        pick["rank"] = i
+        pick["score"] = pick.get("composite_score")
+        technical = pick.get("technical") or {}
+        pick.setdefault("rsi", technical.get("rsi") or 0.0)
+        pick.setdefault("price", technical.get("price") or 0.0)
+
+    import asyncio
+
     graph = build_debate_graph(app_config=app_config, dao=dao)
     verdicts: list[dict] = []
-    for pick in picks:
-        symbol = pick["symbol"]
-        try:
-            result = graph.invoke(
-                {"ticker": symbol, "month_id": month_id, "signals": pick}
-            )
-            verdicts.append(result)
-        except Exception:
-            logger.exception("debate failed for %s — skipping", symbol)
+
+    async def _run_debates() -> list[dict]:
+        results = []
+        for pick in picks:
+            symbol = pick["symbol"]
+            try:
+                result = await graph.ainvoke(
+                    {"ticker": symbol, "month_id": month_id, "signals": pick}
+                )
+                results.append(result)
+            except Exception:
+                logger.exception("debate failed for %s — skipping", symbol)
+        return results
+
+    verdicts = asyncio.run(_run_debates())
 
     logger.info("debate complete — %d verdicts", len(verdicts))
 
     # Step 5 — write picks + email
     if not dry_run:
-        import asyncio
 
         async def _write_picks() -> None:
             from screener.lib.storage.schema import (
@@ -187,7 +263,7 @@ def main() -> None:
         logger.info("picks written to storage")
 
         if app_config.notifications.email.enabled:
-            send_report(app_config=app_config, verdicts=verdicts, month_id=month_id)
+            send_email(cfg=app_config, picks=picks, date=month_id, verdicts=verdicts)
             logger.info("email report sent")
         else:
             logger.info("email disabled in config — skipping")

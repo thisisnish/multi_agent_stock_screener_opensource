@@ -6,7 +6,7 @@ Formula:
     score = clamp(z * 15 + 50, 0, 100)
 
 Guards:
-    - Sector std = 0 → return None for all
+    - Sector std = 0 → return 50.0 (neutral) for all tickers in that sector
     - Sector < MIN_SECTOR_SIZE valid tickers → return None for all
     - Missing / None value → return None (sector-neutral imputation handled by caller)
 """
@@ -18,7 +18,7 @@ import statistics
 
 logger = logging.getLogger(__name__)
 
-MIN_SECTOR_SIZE = 5
+MIN_SECTOR_SIZE = 2
 
 
 def sector_z_scores(
@@ -89,7 +89,7 @@ def sector_z_scores(
                 "sector std=0 — all values identical, returning neutral",
                 extra={"sector": sector, "factor": value_key},
             )
-            scores[symbol] = None
+            scores[symbol] = 50.0
             continue
 
         z = (float(data[value_key]) - mean) / std

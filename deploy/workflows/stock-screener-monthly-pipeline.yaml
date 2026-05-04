@@ -7,6 +7,10 @@
 #   3. screener_job          — score + debate + write picks + email report
 #   4. eval GCF              — score prior month picks + write quality metrics
 #
+# Each Cloud Run Job is triggered via the Cloud Run v2 Jobs API and polled
+# via the Operations API until done (trigger+poll pattern). The eval step
+# calls a Cloud Function synchronously with http.post — no polling needed.
+#
 # Triggered by Cloud Scheduler on the 1st Friday of each month at 9 AM ET
 # (cron: 0 9 1-7 * 5, timezone: America/New_York).
 # ---------------------------------------------------------------------------
@@ -21,63 +25,183 @@ main:
           - current_time: '${sys.now()}'
           - month_id: '${default(map.get(args, "month_id"), text.substring(time.format(current_time), 0, 7))}'
 
-    - run_financial_update:
-        call: googleapis.run.v1.namespaces.jobs.run
+    # ── Step 1: Trigger financial-update-job and poll until done ──────────────
+    - trigger_financial_update:
+        call: http.post
         args:
-          name: '${"namespaces/" + project_id + "/jobs/financial-update-job"}'
-          location: '${region}'
-          body:
-            overrides:
-              containerOverrides:
-                - name: financial-update-job
-                  env:
-                    - name: MONTH_ID
-                      value: '${month_id}'
-        result: financial_update_result
+          url: '${"https://run.googleapis.com/v2/projects/" + project_id + "/locations/" + region + "/jobs/financial-update-job:run"}'
+          auth:
+            type: OAuth2
+          timeout: 60
+        result: financial_update_run_response
 
-    - check_financial_update:
+    - extract_financial_update_operation:
+        assign:
+          - financial_update_operation_name: '${financial_update_run_response.body.name}'
+          - financial_update_poll_count: 0
+          - financial_update_poll_limit: 240
+
+    - poll_financial_update:
         switch:
-          - condition: '${financial_update_result.status.succeededCount < 1}'
-            raise: '${"financial_update_job failed: " + json.encode_to_string(financial_update_result)}'
+          - condition: '${financial_update_poll_count >= financial_update_poll_limit}'
+            next: financial_update_timed_out
+        next: wait_and_check_financial_update
 
-    - run_edgar_disclosure:
-        call: googleapis.run.v1.namespaces.jobs.run
+    - wait_and_check_financial_update:
+        steps:
+          - sleep_financial_update:
+              call: sys.sleep
+              args:
+                seconds: 15
+          - get_financial_update_operation:
+              call: http.get
+              args:
+                url: '${"https://run.googleapis.com/v2/" + financial_update_operation_name}'
+                auth:
+                  type: OAuth2
+                timeout: 30
+              result: financial_update_op_response
+          - increment_financial_update_poll:
+              assign:
+                - financial_update_poll_count: '${financial_update_poll_count + 1}'
+          - check_financial_update_status:
+              switch:
+                - condition: '${default(map.get(financial_update_op_response.body, "done"), false) == true and map.get(financial_update_op_response.body, "error") != null}'
+                  next: financial_update_failed
+                - condition: '${default(map.get(financial_update_op_response.body, "done"), false) == true}'
+                  next: trigger_edgar_disclosure
+              next: poll_financial_update
+
+    - financial_update_timed_out:
+        raise:
+          code: 504
+          message: "financial-update-job timed out after polling limit"
+
+    - financial_update_failed:
+        raise:
+          code: 500
+          message: '${"financial-update-job failed: " + json.encode_to_string(financial_update_op_response.body.error)}'
+
+    # ── Step 2: Trigger edgar-disclosure-job and poll until done ─────────────
+    - trigger_edgar_disclosure:
+        call: http.post
         args:
-          name: '${"namespaces/" + project_id + "/jobs/edgar-disclosure-job"}'
-          location: '${region}'
-          body:
-            overrides:
-              containerOverrides:
-                - name: edgar-disclosure-job
-                  env:
-                    - name: MONTH_ID
-                      value: '${month_id}'
-        result: edgar_disclosure_result
+          url: '${"https://run.googleapis.com/v2/projects/" + project_id + "/locations/" + region + "/jobs/edgar-disclosure-job:run"}'
+          auth:
+            type: OAuth2
+          timeout: 60
+        result: edgar_disclosure_run_response
 
-    - check_edgar_disclosure:
+    - extract_edgar_disclosure_operation:
+        assign:
+          - edgar_disclosure_operation_name: '${edgar_disclosure_run_response.body.name}'
+          - edgar_disclosure_poll_count: 0
+          - edgar_disclosure_poll_limit: 480
+
+    - poll_edgar_disclosure:
         switch:
-          - condition: '${edgar_disclosure_result.status.succeededCount < 1}'
-            raise: '${"edgar_disclosure_job failed: " + json.encode_to_string(edgar_disclosure_result)}'
+          - condition: '${edgar_disclosure_poll_count >= edgar_disclosure_poll_limit}'
+            next: edgar_disclosure_timed_out
+        next: wait_and_check_edgar_disclosure
 
-    - run_screener:
-        call: googleapis.run.v1.namespaces.jobs.run
+    - wait_and_check_edgar_disclosure:
+        steps:
+          - sleep_edgar_disclosure:
+              call: sys.sleep
+              args:
+                seconds: 15
+          - get_edgar_disclosure_operation:
+              call: http.get
+              args:
+                url: '${"https://run.googleapis.com/v2/" + edgar_disclosure_operation_name}'
+                auth:
+                  type: OAuth2
+                timeout: 30
+              result: edgar_disclosure_op_response
+          - increment_edgar_disclosure_poll:
+              assign:
+                - edgar_disclosure_poll_count: '${edgar_disclosure_poll_count + 1}'
+          - check_edgar_disclosure_status:
+              switch:
+                - condition: '${default(map.get(edgar_disclosure_op_response.body, "done"), false) == true and map.get(edgar_disclosure_op_response.body, "error") != null}'
+                  next: edgar_disclosure_failed
+                - condition: '${default(map.get(edgar_disclosure_op_response.body, "done"), false) == true}'
+                  next: trigger_screener
+              next: poll_edgar_disclosure
+
+    - edgar_disclosure_timed_out:
+        steps:
+          - log_edgar_timeout:
+              call: sys.log
+              args:
+                text: "edgar-disclosure-job timed out — continuing with existing EDGAR data in Firestore"
+                severity: WARNING
+          - continue_after_edgar_timeout:
+              next: trigger_screener
+
+    - edgar_disclosure_failed:
+        raise:
+          code: 500
+          message: '${"edgar-disclosure-job failed: " + json.encode_to_string(edgar_disclosure_op_response.body.error)}'
+
+    # ── Step 3: Trigger screener-job and poll until done ──────────────────────
+    - trigger_screener:
+        call: http.post
         args:
-          name: '${"namespaces/" + project_id + "/jobs/screener-job"}'
-          location: '${region}'
-          body:
-            overrides:
-              containerOverrides:
-                - name: screener-job
-                  env:
-                    - name: MONTH_ID
-                      value: '${month_id}'
-        result: screener_result
+          url: '${"https://run.googleapis.com/v2/projects/" + project_id + "/locations/" + region + "/jobs/screener-job:run"}'
+          auth:
+            type: OAuth2
+          timeout: 60
+        result: screener_run_response
 
-    - check_screener:
+    - extract_screener_operation:
+        assign:
+          - screener_operation_name: '${screener_run_response.body.name}'
+          - screener_poll_count: 0
+          - screener_poll_limit: 240
+
+    - poll_screener:
         switch:
-          - condition: '${screener_result.status.succeededCount < 1}'
-            raise: '${"screener_job failed: " + json.encode_to_string(screener_result)}'
+          - condition: '${screener_poll_count >= screener_poll_limit}'
+            next: screener_timed_out
+        next: wait_and_check_screener
 
+    - wait_and_check_screener:
+        steps:
+          - sleep_screener:
+              call: sys.sleep
+              args:
+                seconds: 15
+          - get_screener_operation:
+              call: http.get
+              args:
+                url: '${"https://run.googleapis.com/v2/" + screener_operation_name}'
+                auth:
+                  type: OAuth2
+                timeout: 30
+              result: screener_op_response
+          - increment_screener_poll:
+              assign:
+                - screener_poll_count: '${screener_poll_count + 1}'
+          - check_screener_status:
+              switch:
+                - condition: '${default(map.get(screener_op_response.body, "done"), false) == true and map.get(screener_op_response.body, "error") != null}'
+                  next: screener_failed
+                - condition: '${default(map.get(screener_op_response.body, "done"), false) == true}'
+                  next: derive_eval_month
+              next: poll_screener
+
+    - screener_timed_out:
+        raise:
+          code: 504
+          message: "screener-job timed out after polling limit"
+
+    - screener_failed:
+        raise:
+          code: 500
+          message: '${"screener-job failed: " + json.encode_to_string(screener_op_response.body.error)}'
+
+    # ── Step 4: Derive eval month and call eval Cloud Function ────────────────
     - derive_eval_month:
         assign:
           - current_year: '${int(text.substring(month_id, 0, 4))}'
@@ -96,19 +220,11 @@ main:
             type: OIDC
           body:
             month_id: '${eval_month_id}'
+          timeout: 540
         result: eval_result
-
-    - check_eval:
-        switch:
-          - condition: '${eval_result.code != 200}'
-            raise: '${"eval GCF failed: " + json.encode_to_string(eval_result.body)}'
 
     - done:
         return:
           status: "success"
           month_id: '${month_id}'
           eval_month_id: '${eval_month_id}'
-          financial_update: '${financial_update_result.status}'
-          edgar_disclosure: '${edgar_disclosure_result.status}'
-          screener: '${screener_result.status}'
-          eval: '${eval_result.body}'

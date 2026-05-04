@@ -80,7 +80,7 @@ main:
     - financial_update_failed:
         raise:
           code: 500
-          message: '${"financial-update-job failed: " + string(financial_update_op_response.body.error)}'
+          message: '${"financial-update-job failed: " + json.encode_to_string(financial_update_op_response.body.error)}'
 
     # ── Step 2: Trigger edgar-disclosure-job and poll until done ─────────────
     - trigger_edgar_disclosure:
@@ -142,7 +142,7 @@ main:
     - edgar_disclosure_failed:
         raise:
           code: 500
-          message: '${"edgar-disclosure-job failed: " + string(edgar_disclosure_op_response.body.error)}'
+          message: '${"edgar-disclosure-job failed: " + json.encode_to_string(edgar_disclosure_op_response.body.error)}'
 
     # ── Step 3: Trigger screener-job and poll until done ──────────────────────
     - trigger_screener:
@@ -199,7 +199,7 @@ main:
     - screener_failed:
         raise:
           code: 500
-          message: '${"screener-job failed: " + string(screener_op_response.body.error)}'
+          message: '${"screener-job failed: " + json.encode_to_string(screener_op_response.body.error)}'
 
     # ── Step 4: Derive eval month and call eval Cloud Function ────────────────
     - derive_eval_month:

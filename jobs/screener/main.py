@@ -273,7 +273,6 @@ def main() -> None:
     verdicts = asyncio.run(_run_pipeline())
 
     if not dry_run:
-
         if app_config.notifications.email.enabled:
             send_email(cfg=app_config, picks=picks, date=month_id, verdicts=verdicts)
             logger.info("email report sent")

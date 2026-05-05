@@ -101,7 +101,7 @@ def main() -> None:
     from screener.metrics.ebitda_ev import fetch_ebitda_ev
     from screener.metrics.fcf_yield import fetch_fcf_yield
     from screener.metrics.ma200_gate import apply_gate
-    from screener.metrics.technical import compute_score
+    from screener.metrics.technical import fetch_technical_signal
 
     # Step 1 — fetch signals
     raw_signals: list[dict] = []
@@ -109,7 +109,7 @@ def main() -> None:
         symbol = entry["symbol"]
         sector = entry.get("sector", "Unknown")
         try:
-            technical = compute_score(symbol, None)
+            technical = fetch_technical_signal(symbol)
             earnings = fetch_earnings_yield([symbol]).get(symbol, {})
             fcf = fetch_fcf_yield([symbol]).get(symbol, {})
             ebitda = fetch_ebitda_ev([symbol]).get(symbol, {})
@@ -127,6 +127,26 @@ def main() -> None:
             logger.exception("signal fetch failed for %s — skipping", symbol)
 
     logger.info("fetched signals for %d/%d tickers", len(raw_signals), len(tickers))
+
+    # Hard-abort: technical signal is a hard constraint per AGENT.md.
+    # Any ticker whose technical data was skipped (insufficient history) must
+    # cause the entire run to fail — silent RSI=0 imputation is not allowed.
+    skipped_technical = [
+        sig["symbol"]
+        for sig in raw_signals
+        if sig.get("technical", {}).get("skipped", False)
+    ]
+    if skipped_technical:
+        technical_by_sym = {sig["symbol"]: sig["technical"] for sig in raw_signals}
+        for sym in skipped_technical:
+            reason = technical_by_sym[sym].get("reason", "unknown")
+            logger.error("technical signal failed for %s — %s", sym, reason)
+        logger.error(
+            "aborting screener_job: technical signal missing for %d ticker(s): %s",
+            len(skipped_technical),
+            ", ".join(skipped_technical),
+        )
+        sys.exit(1)
 
     # Step 2 — normalize + score
     weights = app_config.signals.weights

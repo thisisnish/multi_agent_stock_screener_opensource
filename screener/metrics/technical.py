@@ -1,13 +1,19 @@
 """
 screener/metrics/technical.py — Technical signal: RSI, MA50/200, volume, momentum.
 
-Pure pandas — no I/O. All functions are stateless and testable in isolation.
+``compute_score`` is pure pandas — no I/O. Stateless and testable in isolation.
+``fetch_technical_signal`` wraps yfinance download and calls ``compute_score``.
 """
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
+import yfinance as yf
+
+logger = logging.getLogger(__name__)
 
 RSI_PERIOD = 14
 MA_SHORT = 50
@@ -138,3 +144,35 @@ def compute_score(symbol: str, df: pd.DataFrame) -> dict:
         },
         "skipped": False,
     }
+
+
+# Number of calendar days to request from yfinance to guarantee at least MIN_ROWS
+# trading days. ~1.4× buffer covers weekends and US market holidays.
+_FETCH_DAYS = int(MIN_ROWS * 1.5)
+
+
+def fetch_technical_signal(symbol: str, period_days: int = _FETCH_DAYS) -> dict:
+    """Download price history from yfinance and compute the technical signal.
+
+    Args:
+        symbol: Ticker symbol (e.g. "AAPL").
+        period_days: Number of calendar days of history to request.  Defaults
+            to ``_FETCH_DAYS`` which provides a ~50 % buffer over ``MIN_ROWS``
+            to account for weekends and market holidays.
+
+    Returns:
+        The same dict structure as ``compute_score``:
+        ``{"score": float, "rsi": float, ..., "skipped": False}`` on success, or
+        ``{"skipped": True, "reason": str}`` when data is insufficient.
+    """
+    ticker = yf.Ticker(symbol)
+    df = ticker.history(period=f"{period_days}d")
+
+    if df is None or df.empty:
+        logger.warning("yfinance returned no data for %s", symbol)
+        return {"skipped": True, "reason": f"yfinance returned no data for {symbol}"}
+
+    logger.info(
+        "fetched %d rows of price history for %s (need %d)", len(df), symbol, MIN_ROWS
+    )
+    return compute_score(symbol, df)

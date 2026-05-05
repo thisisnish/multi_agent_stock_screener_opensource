@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import requests
@@ -47,6 +48,25 @@ logger = logging.getLogger(__name__)
 
 # Resend v1 email endpoint.
 _RESEND_API_URL = "https://api.resend.com/emails"
+
+
+def _month_label(date: str) -> str:
+    """Convert a ``YYYY-MM`` month ID to a human-readable label.
+
+    Args:
+        date: Month identifier string, e.g. ``"2026-04"``.  If parsing fails
+            (e.g. a plain date string was passed), the original value is
+            returned unchanged so the caller never breaks.
+
+    Returns:
+        e.g. ``"April 2026"``
+    """
+    try:
+        dt = datetime.strptime(date, "%Y-%m")
+        return dt.strftime("%B %Y")
+    except ValueError:
+        return date
+
 
 # ---------------------------------------------------------------------------
 # Formatting helpers (private)
@@ -139,7 +159,7 @@ def build_picks_table_html(
         else "Quarterly fundamental signals (FCF yield, EBITDA/EV): vintage unavailable."
     )
 
-    return f"""<h2>Monthly S&amp;P 500 Top Picks — {date}</h2>
+    return f"""<h2>Monthly S&amp;P 500 Top Picks — {_month_label(date)}</h2>
 <p>Composite score: Technical 20% · Earnings Yield 30% · FCF Yield 30% · EBITDA/EV 20%,
 all sector Z-score normalised (0–100). MA200 gate applies a 0.5× dampener when price
 is below the 200-day moving average (⚠). Max 3 tickers per GICS sector.</p>
@@ -394,7 +414,7 @@ def send_email(
     )
 
     subject_prefix = email_cfg.subject_prefix or "[Stock Screener]"
-    subject = f"{subject_prefix} Monthly Report — {date}"
+    subject = f"{subject_prefix} Monthly Report — {_month_label(date)}"
 
     try:
         resp = requests.post(

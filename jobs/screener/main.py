@@ -288,6 +288,20 @@ def main() -> None:
         if not dry_run:
             await _write_ticker_docs(gated)
 
+            # Write screenings/ collection: full scoring run snapshot including
+            # sector-cap enforcement audit trail.  Written once per month after
+            # the sector-cap step and before the debate loop.
+            from screener.screening.writer import write_screening_doc
+
+            await write_screening_doc(
+                dao=dao,
+                month_id=month_id,
+                gated=gated,
+                picks=picks,
+                factor_scores=factor_scores,
+                top_n=top_n,
+            )
+
         # Fetch prior-month eval_context once before the debate loop.
         # Graceful degrade: if the eval doc is missing or storage fails,
         # eval_context is None and the Judge runs without eval feedback.

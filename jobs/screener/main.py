@@ -224,9 +224,8 @@ def main() -> None:
     import asyncio
 
     graph = build_debate_graph(app_config=app_config, dao=dao)
-    verdicts: list[dict] = []
 
-    async def _run_debates() -> list[dict]:
+    async def _run_pipeline() -> list[dict]:
         results = []
         for pick in picks:
             symbol = pick["symbol"]
@@ -237,16 +236,10 @@ def main() -> None:
                 results.append(result)
             except Exception:
                 logger.exception("debate failed for %s — skipping", symbol)
-        return results
 
-    verdicts = asyncio.run(_run_debates())
+        logger.info("debate complete — %d verdicts", len(results))
 
-    logger.info("debate complete — %d verdicts", len(verdicts))
-
-    # Step 5 — write picks + email
-    if not dry_run:
-
-        async def _write_picks() -> None:
+        if not dry_run:
             from screener.lib.storage.schema import (
                 PICKS,
                 current_week_id,
@@ -265,7 +258,7 @@ def main() -> None:
                 return obj
 
             week_id = current_week_id()
-            for verdict in verdicts:
+            for verdict in results:
                 symbol = verdict.get("ticker", "UNKNOWN")
                 doc_id = pick_ledger_doc_id(symbol, week_id)
                 await dao.set(
@@ -273,9 +266,13 @@ def main() -> None:
                     doc_id,
                     _to_serializable({**verdict, "entry_month": month_id}),
                 )
+            logger.info("picks written to storage")
 
-        asyncio.run(_write_picks())
-        logger.info("picks written to storage")
+        return results
+
+    verdicts = asyncio.run(_run_pipeline())
+
+    if not dry_run:
 
         if app_config.notifications.email.enabled:
             send_email(cfg=app_config, picks=picks, date=month_id, verdicts=verdicts)

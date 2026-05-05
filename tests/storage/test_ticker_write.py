@@ -370,6 +370,11 @@ def _run_main(env: dict, tickers_content: bytes = _TICKERS_YAML) -> MagicMock:
                 return_value=_fake_graph(),
             ),
             patch("screener.lib.email_sender.send_email"),
+            # Prevent real yfinance call for SPY price fetch in performance tracker.
+            patch(
+                "screener.performance.tracker.fetch_spy_price",
+                return_value=523.45,
+            ),
         ):
             import builtins
 
@@ -475,9 +480,9 @@ class TestTickerWriteNonDryRun:
         )
 
     def test_total_set_calls_includes_tickers_and_picks(self):
-        """Two tickers + two pick ledger entries = 4 total dao.set() calls."""
+        """Two tickers + two pick ledger entries + two perf ledger entries + one perf snapshot = 7."""
         mock_dao = _run_main({"MONTH_ID": "2026-05", "DRY_RUN": "false"})
-        assert mock_dao.set.call_count == 4
+        assert mock_dao.set.call_count == 7
 
 
 class TestTickerWriteDryRun:

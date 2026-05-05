@@ -108,6 +108,19 @@ def perf_snapshot_doc_id(week_id: str) -> str:
     return f"perf_{week_id}"
 
 
+def performance_doc_id(month_id: str, source: str = "judge") -> str:
+    """Doc ID for a monthly performance snapshot in the ``performance`` collection.
+
+    Args:
+        month_id: Month identifier in ``"YYYY-MM"`` format, e.g. ``"2026-04"``.
+        source: Agent that produced the verdict; defaults to ``"judge"``.
+
+    Returns:
+        e.g. ``"2026-04_judge"``
+    """
+    return f"{month_id}_{source}"
+
+
 def pick_ledger_doc_id(ticker: str, month_id: str, source: str = "judge") -> str:
     """Doc ID for an individual pick-ledger entry in the ``picks`` collection.
 
@@ -372,20 +385,30 @@ class PickLedgerDoc(BaseModel):
     exit_spy_price: Optional[float] = None
     pick_return_pct: Optional[float] = None
     spy_return_pct: Optional[float] = None
+    alpha_pct: Optional[float] = None
     beat_spy: Optional[bool] = None
     price_timestamp: Optional[str] = None
 
 
 class PerformanceSnapshotDoc(BaseModel):
-    """Schema for a weekly performance-snapshot document in the ``performance`` collection."""
+    """Schema for a monthly performance-snapshot document in the ``performance`` collection.
 
-    week: str
+    Doc ID: ``{MONTH_ID}_{source}`` (e.g. ``"2026-04_judge"``).
+    One document per monthly run, aggregating all pick outcomes for that month.
+    Written immediately after picks are published; updated when picks close.
+    """
+
+    month_id: str
+    source: str = "judge"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     total_picks: int
     active_picks: int
     closed_picks: int
+    entry_spy_price: Optional[float] = None
     win_rate: Optional[float] = None
     avg_return_pct: Optional[float] = None
     avg_spy_return_pct: Optional[float] = None
+    avg_alpha_pct: Optional[float] = None
     beats_spy_rate: Optional[float] = None
 
 

@@ -70,9 +70,10 @@ class TestFetchTechnicalSignalDelegation:
             fetch_technical_signal("AAPL")
 
         mock_ticker.history.assert_called_once()
-        period_arg = mock_ticker.history.call_args[1].get(
-            "period"
-        ) or mock_ticker.history.call_args[0][0]
+        period_arg = (
+            mock_ticker.history.call_args[1].get("period")
+            or mock_ticker.history.call_args[0][0]
+        )
         assert "d" in str(period_arg)
 
     def test_returns_score_dict_on_sufficient_data(self):

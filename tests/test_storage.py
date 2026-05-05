@@ -342,6 +342,140 @@ class TestFirestoreDAOVectorSearch:
 
         assert len(results) == 1
 
+    def test_vector_search_fallback_on_dimension_error(self):
+        """InvalidArgument('Vectors must be at most …') triggers brute-force path."""
+        from google.api_core.exceptions import InvalidArgument
+
+        dao, mock_client = _make_dao()
+
+        # Native query raises the dimension error.
+        vector_query = MagicMock()
+        vector_query.get = AsyncMock(
+            side_effect=InvalidArgument("Vectors must be at most 2048 dimensions.")
+        )
+        mock_client.collection.return_value.find_nearest.return_value = vector_query
+
+        # Brute-force scan returns one matching doc.
+        # embedding must be same dimension as query (2) and have cosine ~ 1.0
+        q = [1.0, 0.0]
+        stored_doc = {"text": "match", "ticker": "AAPL", "embedding": [1.0, 0.0]}
+        snap = _make_snap(exists=True, data=stored_doc)
+        mock_client.collection.return_value.get = AsyncMock(return_value=[snap])
+
+        results = asyncio.run(
+            dao.vector_search(CHUNKS, q, top_k=5, threshold=0.5)
+        )
+
+        assert len(results) == 1
+        assert results[0]["text"] == "match"
+        assert "_score" in results[0]
+
+    def test_vector_search_reraises_other_invalid_argument(self):
+        """InvalidArgument without the dimension message is not swallowed."""
+        from google.api_core.exceptions import InvalidArgument
+
+        dao, mock_client = _make_dao()
+
+        vector_query = MagicMock()
+        vector_query.get = AsyncMock(
+            side_effect=InvalidArgument("Some other argument error.")
+        )
+        mock_client.collection.return_value.find_nearest.return_value = vector_query
+
+        with pytest.raises(InvalidArgument, match="Some other argument error"):
+            asyncio.run(dao.vector_search(CHUNKS, [0.1, 0.2], top_k=5, threshold=0.5))
+
+    def test_vector_search_fallback_applies_filters(self):
+        """filters dict is passed as where() clauses in the brute-force scan."""
+        from google.api_core.exceptions import InvalidArgument
+
+        dao, mock_client = _make_dao()
+
+        vector_query = MagicMock()
+        vector_query.get = AsyncMock(
+            side_effect=InvalidArgument("Vectors must be at most 2048 dimensions.")
+        )
+        mock_client.collection.return_value.find_nearest.return_value = vector_query
+
+        q = [1.0, 0.0]
+        stored_doc = {"text": "filtered", "ticker": "AAPL", "embedding": [1.0, 0.0]}
+        snap = _make_snap(exists=True, data=stored_doc)
+
+        # Simulate chained .where().get() returning one doc.
+        where_result = MagicMock()
+        where_result.get = AsyncMock(return_value=[snap])
+        mock_client.collection.return_value.where.return_value = where_result
+
+        results = asyncio.run(
+            dao.vector_search(
+                CHUNKS, q, top_k=5, threshold=0.5, filters={"ticker": "AAPL"}
+            )
+        )
+
+        # Confirm where() was called with the filter field and value.
+        mock_client.collection.return_value.where.assert_called_once_with(
+            "ticker", "==", "AAPL"
+        )
+        assert len(results) == 1
+
+    def test_vector_search_fallback_skips_dim_mismatch(self):
+        """Stored embeddings with wrong dimensionality are silently skipped."""
+        from google.api_core.exceptions import InvalidArgument
+
+        dao, mock_client = _make_dao()
+
+        vector_query = MagicMock()
+        vector_query.get = AsyncMock(
+            side_effect=InvalidArgument("Vectors must be at most 2048 dimensions.")
+        )
+        mock_client.collection.return_value.find_nearest.return_value = vector_query
+
+        q = [1.0, 0.0]
+        good_doc = {"text": "good", "embedding": [1.0, 0.0]}
+        bad_doc = {"text": "bad_dim", "embedding": [1.0, 0.0, 0.0]}  # 3-dim vs 2-dim query
+        snaps = [
+            _make_snap(exists=True, data=good_doc),
+            _make_snap(exists=True, data=bad_doc),
+        ]
+        mock_client.collection.return_value.get = AsyncMock(return_value=snaps)
+
+        results = asyncio.run(
+            dao.vector_search(CHUNKS, q, top_k=5, threshold=0.0)
+        )
+
+        assert len(results) == 1
+        assert results[0]["text"] == "good"
+
+    def test_vector_search_fallback_sorts_and_caps_top_k(self):
+        """Brute-force results are sorted by descending similarity and capped at top_k."""
+        from google.api_core.exceptions import InvalidArgument
+
+        dao, mock_client = _make_dao()
+
+        vector_query = MagicMock()
+        vector_query.get = AsyncMock(
+            side_effect=InvalidArgument("Vectors must be at most 2048 dimensions.")
+        )
+        mock_client.collection.return_value.find_nearest.return_value = vector_query
+
+        # Query along [1,0]; cosine against each doc is proportional to first component.
+        q = [1.0, 0.0]
+        docs = [
+            {"text": "medium", "embedding": [0.7, 0.714]},   # cosine ≈ 0.70
+            {"text": "high",   "embedding": [0.99, 0.141]},  # cosine ≈ 0.99
+            {"text": "low",    "embedding": [0.5, 0.866]},   # cosine ≈ 0.50
+        ]
+        snaps = [_make_snap(exists=True, data=d) for d in docs]
+        mock_client.collection.return_value.get = AsyncMock(return_value=snaps)
+
+        results = asyncio.run(
+            dao.vector_search(CHUNKS, q, top_k=2, threshold=0.0)
+        )
+
+        assert len(results) == 2
+        assert results[0]["text"] == "high"
+        assert results[1]["text"] == "medium"
+
 
 # ---------------------------------------------------------------------------
 # FirestoreDAO.close

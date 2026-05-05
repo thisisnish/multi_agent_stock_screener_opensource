@@ -68,7 +68,11 @@ async def get_disclosure_chunks_async(
     try:
         embedding: list[float] = await asyncio.to_thread(embedder.embed_query, query)
         chunks = await dao.vector_search(
-            CHUNKS, embedding, top_k=top_k, threshold=threshold
+            CHUNKS,
+            embedding,
+            top_k=top_k,
+            threshold=threshold,
+            filters={"ticker": ticker.upper()},
         )
         logger.debug(
             "EDGAR retrieval for %s: %d chunks above threshold %.2f",

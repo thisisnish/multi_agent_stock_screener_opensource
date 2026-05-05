@@ -86,6 +86,7 @@ class StorageDAO(ABC):
         embedding: list[float],
         top_k: int,
         threshold: float,
+        filters: dict | None = None,
     ) -> list[dict]:
         """Approximate nearest-neighbour search over embedded documents.
 
@@ -94,6 +95,11 @@ class StorageDAO(ABC):
             embedding: The query vector (must match the index dimensionality).
             top_k: Maximum number of results to return.
             threshold: Minimum similarity score; results below this are dropped.
+            filters: Optional ``{field: value}`` equality constraints used by
+                concrete implementations that fall back to brute-force search
+                (e.g. when the native index rejects the query vector).  The
+                native ANN path ignores this parameter.  Defaults to ``None``
+                (no pre-filtering).
 
         Returns:
             A list of up to ``top_k`` document dicts, ordered by descending

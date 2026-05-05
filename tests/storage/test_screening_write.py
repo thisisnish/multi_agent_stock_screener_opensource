@@ -868,6 +868,8 @@ _EBITDA = {
 def _mock_dao() -> MagicMock:
     dao = MagicMock()
     dao.set = AsyncMock(return_value=None)
+    # Return None so the idempotency gate in _run_pipeline does not skip the debate.
+    dao.get = AsyncMock(return_value=None)
     return dao
 
 
@@ -1107,10 +1109,11 @@ class TestScreeningWriteNonDryRun:
 
     def test_total_set_calls_includes_screenings(self):
         """
-        Expected writes: 2 tickers + 1 screenings + 2 picks + 2 perf ledger + 1 perf snapshot = 8.
+        Expected writes: 2 tickers + 1 screenings + 2 analysis + 2 picks
+                         + 2 perf ledger + 1 perf snapshot = 10.
         """
         mock_dao = _run_main({"MONTH_ID": "2026-05", "DRY_RUN": "false"})
-        assert mock_dao.set.call_count == 8
+        assert mock_dao.set.call_count == 10
 
 
 class TestScreeningWriteDryRun:

@@ -12,6 +12,7 @@ Collection layout (mirrors the private reference implementation):
     chunks/      — EDGAR 10-K/10-Q text chunks with vector embeddings (disclosure_chunks)
     eval/        — monthly eval output (evals_output)
     events/      — pipeline lifecycle events (screener_events)
+    analysis/    — monthly debate cache written by screener_job (AnalysisDoc)
 
 Doc ID conventions:
     - {TICKER}                          → tickers master record (e.g. "AAPL")
@@ -48,6 +49,7 @@ SIGNALS: str = "signals"
 PICKS: str = "picks"
 PERFORMANCE: str = "performance"
 SCREENINGS: str = "screenings"
+ANALYSIS: str = "analysis"
 CHUNKS: str = "chunks"
 EVAL: str = "eval"
 EVENTS: str = "events"
@@ -247,6 +249,19 @@ def screening_run_doc_id(month_id: str) -> str:
         The month_id unchanged, e.g. ``"2026-04"``
     """
     return month_id
+
+
+def analysis_doc_id(ticker: str, month_id: str) -> str:
+    """Doc ID for a monthly analysis document.
+
+    Args:
+        ticker: Upper-case ticker symbol, e.g. "AAPL".
+        month_id: Month identifier in "YYYY-MM" format, e.g. "2026-04".
+
+    Returns:
+        e.g. "AAPL_2026-04"
+    """
+    return f"{ticker.upper()}_{month_id}"
 
 
 def current_week_id(dt: datetime | None = None) -> str:
@@ -523,3 +538,33 @@ class ScreeningDoc(BaseModel):
     top_n_after_cap: list[str] = Field(default_factory=list)
     sector_distribution: dict[str, int] = Field(default_factory=dict)
     signal_vintage_dates: dict[str, str] = Field(default_factory=dict)
+
+
+class AnalysisDoc(BaseModel):
+    """Schema for a monthly debate analysis document in the ``analysis`` collection.
+
+    Written by ``screener_job`` after the multi-agent debate completes for each
+    ticker.  Caches the full debate output (Bull + Bear + Judge) so re-runs for
+    the same month can skip expensive LLM calls when the doc already exists.
+
+    Doc ID: ``{TICKER}_{MONTH_ID}`` (e.g. ``"AAPL_2026-04"``).
+    Firestore path: ``analysis/AAPL_2026-04``.
+    """
+
+    ticker: str
+    month_id: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    bull_thesis: list[str] = Field(default_factory=list)
+    bull_catalysts: list[str] = Field(default_factory=list)
+    bear_thesis: list[str] = Field(default_factory=list)
+    bull_sources: list[str] = Field(default_factory=list)
+    bear_sources: list[str] = Field(default_factory=list)
+    judge_reasoning: str = ""
+    judge_verdict: str = "HOLD"
+    judge_confidence: Optional[float] = None
+    bull_conviction: Optional[float] = None
+    bear_conviction: Optional[float] = None
+    decisive_factor: Optional[str] = None
+    margin_of_victory: Optional[str] = None
+    contested_truth: bool = False
+    horizon: Optional[str] = None

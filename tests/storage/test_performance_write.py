@@ -556,6 +556,8 @@ def _mock_dao() -> MagicMock:
     """Return a mock FirestoreDAO whose set() is an awaitable no-op."""
     dao = MagicMock()
     dao.set = AsyncMock(return_value=None)
+    # Return None so the idempotency gate in _run_pipeline does not skip the debate.
+    dao.get = AsyncMock(return_value=None)
     return dao
 
 
@@ -805,6 +807,6 @@ class TestPerformanceWriteOrdering:
         )
 
     def test_total_set_calls_includes_tickers_picks_performance(self):
-        """2 tickers + 1 screenings + 2 picks + 2 perf ledgers + 1 perf snapshot = 8 total."""
+        """2 tickers + 1 screenings + 2 analysis + 2 picks + 2 perf ledgers + 1 perf snapshot = 10 total."""
         mock_dao = _run_main({"MONTH_ID": "2026-05", "DRY_RUN": "false"})
-        assert mock_dao.set.call_count == 8
+        assert mock_dao.set.call_count == 10

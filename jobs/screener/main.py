@@ -323,6 +323,40 @@ def main() -> None:
         for pick in picks:
             symbol = pick["symbol"]
             try:
+                from screener.lib.storage.schema import ANALYSIS, analysis_doc_id
+
+                existing_analysis = await dao.get(
+                    ANALYSIS, analysis_doc_id(symbol, month_id)
+                )
+                if existing_analysis:
+                    logger.info(
+                        "analysis doc exists for %s %s — skipping debate",
+                        symbol,
+                        month_id,
+                    )
+                    # Reconstruct minimal DebateState-compatible dict so downstream
+                    # reshape works correctly without re-running the debate.
+                    results.append(
+                        {
+                            "ticker": symbol,
+                            "final_action": existing_analysis.get(
+                                "judge_verdict", "HOLD"
+                            ),
+                            "confidence_score": existing_analysis.get(
+                                "judge_confidence"
+                            ),
+                            "judge_output": {
+                                "margin_of_victory": existing_analysis.get(
+                                    "margin_of_victory", "CONTESTED"
+                                ),
+                                "decisive_factor": existing_analysis.get(
+                                    "decisive_factor", "—"
+                                ),
+                            },
+                        }
+                    )
+                    continue
+
                 result = await graph.ainvoke(
                     {
                         "ticker": symbol,
@@ -331,6 +365,12 @@ def main() -> None:
                         "eval_context": eval_context,
                     }
                 )
+                if not dry_run:
+                    from screener.analysis.writer import write_analysis_doc
+
+                    await write_analysis_doc(
+                        dao=dao, ticker=symbol, month_id=month_id, state=result
+                    )
                 results.append(result)
             except Exception:
                 logger.exception("debate failed for %s — skipping", symbol)

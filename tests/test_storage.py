@@ -362,9 +362,7 @@ class TestFirestoreDAOVectorSearch:
         snap = _make_snap(exists=True, data=stored_doc)
         mock_client.collection.return_value.get = AsyncMock(return_value=[snap])
 
-        results = asyncio.run(
-            dao.vector_search(CHUNKS, q, top_k=5, threshold=0.5)
-        )
+        results = asyncio.run(dao.vector_search(CHUNKS, q, top_k=5, threshold=0.5))
 
         assert len(results) == 1
         assert results[0]["text"] == "match"
@@ -432,16 +430,17 @@ class TestFirestoreDAOVectorSearch:
 
         q = [1.0, 0.0]
         good_doc = {"text": "good", "embedding": [1.0, 0.0]}
-        bad_doc = {"text": "bad_dim", "embedding": [1.0, 0.0, 0.0]}  # 3-dim vs 2-dim query
+        bad_doc = {
+            "text": "bad_dim",
+            "embedding": [1.0, 0.0, 0.0],
+        }  # 3-dim vs 2-dim query
         snaps = [
             _make_snap(exists=True, data=good_doc),
             _make_snap(exists=True, data=bad_doc),
         ]
         mock_client.collection.return_value.get = AsyncMock(return_value=snaps)
 
-        results = asyncio.run(
-            dao.vector_search(CHUNKS, q, top_k=5, threshold=0.0)
-        )
+        results = asyncio.run(dao.vector_search(CHUNKS, q, top_k=5, threshold=0.0))
 
         assert len(results) == 1
         assert results[0]["text"] == "good"
@@ -461,16 +460,14 @@ class TestFirestoreDAOVectorSearch:
         # Query along [1,0]; cosine against each doc is proportional to first component.
         q = [1.0, 0.0]
         docs = [
-            {"text": "medium", "embedding": [0.7, 0.714]},   # cosine ≈ 0.70
-            {"text": "high",   "embedding": [0.99, 0.141]},  # cosine ≈ 0.99
-            {"text": "low",    "embedding": [0.5, 0.866]},   # cosine ≈ 0.50
+            {"text": "medium", "embedding": [0.7, 0.714]},  # cosine ≈ 0.70
+            {"text": "high", "embedding": [0.99, 0.141]},  # cosine ≈ 0.99
+            {"text": "low", "embedding": [0.5, 0.866]},  # cosine ≈ 0.50
         ]
         snaps = [_make_snap(exists=True, data=d) for d in docs]
         mock_client.collection.return_value.get = AsyncMock(return_value=snaps)
 
-        results = asyncio.run(
-            dao.vector_search(CHUNKS, q, top_k=2, threshold=0.0)
-        )
+        results = asyncio.run(dao.vector_search(CHUNKS, q, top_k=2, threshold=0.0))
 
         assert len(results) == 2
         assert results[0]["text"] == "high"

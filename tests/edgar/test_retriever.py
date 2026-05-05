@@ -340,7 +340,9 @@ def test_get_disclosure_chunks_async_passes_ticker_filter():
     dao = _mock_dao()
     embedder = _mock_embedder(embedding_dim=4)
 
-    asyncio.run(get_disclosure_chunks_async("aapl", dao, embedder, top_k=3, threshold=0.5))
+    asyncio.run(
+        get_disclosure_chunks_async("aapl", dao, embedder, top_k=3, threshold=0.5)
+    )
 
     dao.vector_search.assert_awaited_once_with(
         CHUNKS,

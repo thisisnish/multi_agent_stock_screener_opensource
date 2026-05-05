@@ -288,12 +288,34 @@ def main() -> None:
         if not dry_run:
             await _write_ticker_docs(gated)
 
+        # Fetch prior-month eval_context once before the debate loop.
+        # Graceful degrade: if the eval doc is missing or storage fails,
+        # eval_context is None and the Judge runs without eval feedback.
+        from screener.eval.loader import fetch_eval_context_async
+
+        eval_context = await fetch_eval_context_async(dao, month_id)
+        if eval_context:
+            logger.info(
+                "eval_context loaded for month_id=%s — injecting into Judge prompts",
+                month_id,
+            )
+        else:
+            logger.debug(
+                "no eval_context available for month_id=%s — Judge runs without eval feedback",
+                month_id,
+            )
+
         results = []
         for pick in picks:
             symbol = pick["symbol"]
             try:
                 result = await graph.ainvoke(
-                    {"ticker": symbol, "month_id": month_id, "signals": pick}
+                    {
+                        "ticker": symbol,
+                        "month_id": month_id,
+                        "signals": pick,
+                        "eval_context": eval_context,
+                    }
                 )
                 results.append(result)
             except Exception:

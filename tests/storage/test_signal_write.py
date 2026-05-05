@@ -182,13 +182,17 @@ class TestBuildSignalPayload:
 
     def test_ticker_and_month_id_set_correctly(self):
         build = self._import()
-        payload = build("AAPL", "2026-04", self._earnings(), self._fcf(), self._ebitda())
+        payload = build(
+            "AAPL", "2026-04", self._earnings(), self._fcf(), self._ebitda()
+        )
         assert payload["ticker"] == "AAPL"
         assert payload["month_id"] == "2026-04"
 
     def test_earnings_fields_populated(self):
         build = self._import()
-        payload = build("AAPL", "2026-04", self._earnings(), self._fcf(), self._ebitda())
+        payload = build(
+            "AAPL", "2026-04", self._earnings(), self._fcf(), self._ebitda()
+        )
         assert payload["earnings_yield"] == 0.03
         assert payload["trailing_eps"] == 6.5
         assert payload["price"] == 175.0
@@ -197,22 +201,31 @@ class TestBuildSignalPayload:
 
     def test_fcf_fields_populated(self):
         build = self._import()
-        payload = build("AAPL", "2026-04", self._earnings(), self._fcf(), self._ebitda())
+        payload = build(
+            "AAPL", "2026-04", self._earnings(), self._fcf(), self._ebitda()
+        )
         assert payload["fcf_yield"] == 0.05
         assert payload["free_cashflow"] == 90_000_000_000.0
         assert payload["fcf_skipped"] is False
 
     def test_ebitda_fields_populated(self):
         build = self._import()
-        payload = build("AAPL", "2026-04", self._earnings(), self._fcf(), self._ebitda())
+        payload = build(
+            "AAPL", "2026-04", self._earnings(), self._fcf(), self._ebitda()
+        )
         assert payload["ebitda_ev"] == 0.08
         assert payload["ebitda"] == 130_000_000_000.0
         assert payload["ebitda_skipped"] is False
 
     def test_skipped_signals_preserved(self):
         build = self._import()
-        earnings = self._earnings(skipped=True, skip_reason="trailingEps is None",
-                                  earnings_yield=None, trailing_eps=None, price=None)
+        earnings = self._earnings(
+            skipped=True,
+            skip_reason="trailingEps is None",
+            earnings_yield=None,
+            trailing_eps=None,
+            price=None,
+        )
         payload = build("AAPL", "2026-04", earnings, self._fcf(), self._ebitda())
         assert payload["earnings_skipped"] is True
         assert payload["earnings_skip_reason"] == "trailingEps is None"
@@ -221,7 +234,9 @@ class TestBuildSignalPayload:
     def test_fetched_at_is_json_string(self):
         """Payload must be Firestore-safe: fetched_at serialised to ISO string."""
         build = self._import()
-        payload = build("AAPL", "2026-04", self._earnings(), self._fcf(), self._ebitda())
+        payload = build(
+            "AAPL", "2026-04", self._earnings(), self._fcf(), self._ebitda()
+        )
         assert isinstance(payload["fetched_at"], str)
 
 
@@ -238,22 +253,56 @@ tickers:
 """
 
 _EARNINGS = {
-    "AAPL": {"earnings_yield": 0.03, "trailing_eps": 6.5, "price": 175.0,
-              "skipped": False, "skip_reason": None},
-    "MSFT": {"earnings_yield": 0.035, "trailing_eps": 12.5, "price": 420.0,
-              "skipped": False, "skip_reason": None},
+    "AAPL": {
+        "earnings_yield": 0.03,
+        "trailing_eps": 6.5,
+        "price": 175.0,
+        "skipped": False,
+        "skip_reason": None,
+    },
+    "MSFT": {
+        "earnings_yield": 0.035,
+        "trailing_eps": 12.5,
+        "price": 420.0,
+        "skipped": False,
+        "skip_reason": None,
+    },
 }
 _FCF = {
-    "AAPL": {"fcf_yield": 0.05, "free_cashflow": 9e10, "market_cap": 2.7e12,
-              "most_recent_quarter": 0, "skipped": False, "skip_reason": None},
-    "MSFT": {"fcf_yield": 0.04, "free_cashflow": 2.5e10, "market_cap": 3.1e12,
-              "most_recent_quarter": 0, "skipped": False, "skip_reason": None},
+    "AAPL": {
+        "fcf_yield": 0.05,
+        "free_cashflow": 9e10,
+        "market_cap": 2.7e12,
+        "most_recent_quarter": 0,
+        "skipped": False,
+        "skip_reason": None,
+    },
+    "MSFT": {
+        "fcf_yield": 0.04,
+        "free_cashflow": 2.5e10,
+        "market_cap": 3.1e12,
+        "most_recent_quarter": 0,
+        "skipped": False,
+        "skip_reason": None,
+    },
 }
 _EBITDA = {
-    "AAPL": {"ebitda_ev": 0.08, "ebitda": 1.3e11, "enterprise_value": 2.9e12,
-              "most_recent_quarter": 0, "skipped": False, "skip_reason": None},
-    "MSFT": {"ebitda_ev": 0.12, "ebitda": 1.3e11, "enterprise_value": 3.2e12,
-              "most_recent_quarter": 0, "skipped": False, "skip_reason": None},
+    "AAPL": {
+        "ebitda_ev": 0.08,
+        "ebitda": 1.3e11,
+        "enterprise_value": 2.9e12,
+        "most_recent_quarter": 0,
+        "skipped": False,
+        "skip_reason": None,
+    },
+    "MSFT": {
+        "ebitda_ev": 0.12,
+        "ebitda": 1.3e11,
+        "enterprise_value": 3.2e12,
+        "most_recent_quarter": 0,
+        "skipped": False,
+        "skip_reason": None,
+    },
 }
 
 
@@ -386,9 +435,7 @@ class TestFinancialUpdateMainWrites:
 
     def test_payload_contains_earnings_yield(self):
         mock_dao = _run_main({"MONTH_ID": "2026-04", "DRY_RUN": "false"})
-        payloads = {
-            call[0][1]: call[0][2] for call in mock_dao.set.call_args_list
-        }
+        payloads = {call[0][1]: call[0][2] for call in mock_dao.set.call_args_list}
         assert payloads["AAPL_2026-04"]["earnings_yield"] == 0.03
         assert payloads["MSFT_2026-04"]["earnings_yield"] == 0.035
 

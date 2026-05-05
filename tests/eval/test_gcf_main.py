@@ -84,7 +84,9 @@ def _make_app_config():
         ),
         signals=SignalsConfig(),
         screener=ScreenerConfig(),
-        notifications=NotificationsConfig(email=EmailConfig(enabled=False, recipients=[])),
+        notifications=NotificationsConfig(
+            email=EmailConfig(enabled=False, recipients=[])
+        ),
         edgar=EdgarConfig(),
     )
 
@@ -190,7 +192,9 @@ class TestBuildEvalContext:
         from gcf.eval.main import _build_eval_context
 
         metrics = self._make_metrics()
-        issues = ["Overconfidence: avg confidence 90.0 vs accuracy 60.0% (gap: 30.0pts)"]
+        issues = [
+            "Overconfidence: avg confidence 90.0 vs accuracy 60.0% (gap: 30.0pts)"
+        ]
         context = _build_eval_context(metrics, issues, {})
         assert context["systematic_issues"] == issues
 
@@ -198,7 +202,14 @@ class TestBuildEvalContext:
         from gcf.eval.main import _build_eval_context
 
         metrics = self._make_metrics()
-        acid = {"High": {"count": 3, "accuracy_pct": 66.7, "max_drawdown": 5.0, "avg_return": 2.0}}
+        acid = {
+            "High": {
+                "count": 3,
+                "accuracy_pct": 66.7,
+                "max_drawdown": 5.0,
+                "avg_return": 2.0,
+            }
+        }
         context = _build_eval_context(metrics, [], acid)
         assert context["acid_test"] == acid
 
@@ -247,7 +258,14 @@ class TestRunEvalMainNoPicks:
         from gcf.eval.main import run_eval_main
 
         dao = self._make_mock_dao(
-            [{"action": "HOLD", "beat_spy": None, "entry_month": "2026-03", "status": "closed"}]
+            [
+                {
+                    "action": "HOLD",
+                    "beat_spy": None,
+                    "entry_month": "2026-03",
+                    "status": "closed",
+                }
+            ]
         )
         result = run_eval_main(_make_app_config(), dao, "2026-03", dry_run=True)
         assert result["status"] == "no_picks"
@@ -296,7 +314,12 @@ class TestRunEvalMainDryRun:
         picks = [
             _make_closed_pick(action="BUY", beat_spy=True),
             _make_closed_pick(action="SELL", beat_spy=False),
-            {"action": "HOLD", "beat_spy": None, "entry_month": "2026-03", "status": "closed"},
+            {
+                "action": "HOLD",
+                "beat_spy": None,
+                "entry_month": "2026-03",
+                "status": "closed",
+            },
         ]
         dao = self._make_mock_dao(picks)
         result = run_eval_main(_make_app_config(), dao, "2026-03", dry_run=True)

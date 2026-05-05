@@ -47,6 +47,7 @@ MEMORY: str = "memory"
 SIGNALS: str = "signals"
 PICKS: str = "picks"
 PERFORMANCE: str = "performance"
+SCREENINGS: str = "screenings"
 CHUNKS: str = "chunks"
 EVAL: str = "eval"
 EVENTS: str = "events"
@@ -230,6 +231,22 @@ def eval_doc_id(year: int, month: int) -> str:
         e.g. ``"eval_202604"``
     """
     return f"eval_{year:04d}{month:02d}"
+
+
+def screening_run_doc_id(month_id: str) -> str:
+    """Doc ID for a monthly screening run document in the ``screenings`` collection.
+
+    The month identifier is used directly as the document ID so that
+    ``screenings/2026-04`` is the stable reference for the full scoring run
+    output for April 2026.
+
+    Args:
+        month_id: Month identifier in ``"YYYY-MM"`` format, e.g. ``"2026-04"``.
+
+    Returns:
+        The month_id unchanged, e.g. ``"2026-04"``
+    """
+    return month_id
 
 
 def current_week_id(dt: datetime | None = None) -> str:
@@ -445,3 +462,64 @@ class EventDoc(BaseModel):
     event_type: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     payload: dict = Field(default_factory=dict)
+
+
+class TickerScreeningEntry(BaseModel):
+    """Per-ticker row stored inside a ``ScreeningDoc``.
+
+    Captures all four normalised signal scores plus the composite score and the
+    MA200 gate multiplier for a single ticker in a given monthly screening run.
+
+    Attributes:
+        symbol:          Upper-case ticker symbol, e.g. ``"AAPL"``.
+        sector:          GICS sector string, e.g. ``"Technology"``.
+        technical:       Sector-normalised technical score (0–100), or None if skipped.
+        earnings:        Sector-normalised earnings yield score (0–100), or None if skipped.
+        fcf:             Sector-normalised FCF yield score (0–100), or None if skipped.
+        ebitda:          Sector-normalised EBITDA/EV score (0–100), or None if skipped.
+        composite_score: Weighted composite score after MA200 gate.
+        ma200_multiplier: Gate multiplier applied (1.0 above MA200, 0.5 below).
+        in_top_n_before_cap: True if this ticker ranked in the top-N before sector-cap enforcement.
+        in_top_n_after_cap:  True if this ticker survived the sector-cap and is in the final picks.
+        cap_filtered:    True if the ticker was excluded by the sector concentration cap.
+    """
+
+    symbol: str
+    sector: str
+    technical: Optional[float] = None
+    earnings: Optional[float] = None
+    fcf: Optional[float] = None
+    ebitda: Optional[float] = None
+    composite_score: float
+    ma200_multiplier: float = 1.0
+    in_top_n_before_cap: bool = False
+    in_top_n_after_cap: bool = False
+    cap_filtered: bool = False
+
+
+class ScreeningDoc(BaseModel):
+    """Schema for a monthly screening run document in the ``screenings`` collection.
+
+    Written once per month immediately after the scoring engine ranks all tickers
+    and enforces the sector concentration cap.  The document provides a full audit
+    trail of:
+    - All tickers that were scored (``all_signals``).
+    - Which tickers were in the top-N before the sector cap (``top_n_before_cap``).
+    - Which tickers survived the cap into the final picks (``top_n_after_cap``).
+    - The sector distribution of final picks (``sector_distribution``).
+    - The date on which each factor's signal data was retrieved (``signal_vintage_dates``).
+
+    Doc ID: ``{MONTH_ID}`` (e.g. ``"2026-04"``).
+    Firestore path: ``screenings/2026-04``.
+
+    Written with ``dao.set()`` (upsert) so re-runs for the same month safely
+    overwrite the document.
+    """
+
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    month_id: str
+    all_signals: list[TickerScreeningEntry] = Field(default_factory=list)
+    top_n_before_cap: list[str] = Field(default_factory=list)
+    top_n_after_cap: list[str] = Field(default_factory=list)
+    sector_distribution: dict[str, int] = Field(default_factory=dict)
+    signal_vintage_dates: dict[str, str] = Field(default_factory=dict)

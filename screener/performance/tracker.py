@@ -52,7 +52,9 @@ def fetch_spy_price() -> Optional[float]:
         logger.info("SPY entry price fetched: %.2f", price)
         return price
     except Exception:
-        logger.exception("failed to fetch SPY price — performance doc will omit entry_spy_price")
+        logger.exception(
+            "failed to fetch SPY price — performance doc will omit entry_spy_price"
+        )
         return None
 
 

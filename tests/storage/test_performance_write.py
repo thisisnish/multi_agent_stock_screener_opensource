@@ -340,8 +340,12 @@ class TestBuildPickLedgerEntries:
             entry_spy_price=520.0,
         )
         by_ticker = {e["ticker"]: e for e in entries}
-        assert by_ticker["AAPL"]["_doc_id"] == pick_ledger_doc_id("AAPL", "2026-04", "judge")
-        assert by_ticker["MSFT"]["_doc_id"] == pick_ledger_doc_id("MSFT", "2026-04", "judge")
+        assert by_ticker["AAPL"]["_doc_id"] == pick_ledger_doc_id(
+            "AAPL", "2026-04", "judge"
+        )
+        assert by_ticker["MSFT"]["_doc_id"] == pick_ledger_doc_id(
+            "MSFT", "2026-04", "judge"
+        )
 
     def test_entry_month_field_set(self):
         from screener.performance.tracker import build_pick_ledger_entries
@@ -371,7 +375,9 @@ class TestBuildPickLedgerEntries:
         from screener.performance.tracker import build_pick_ledger_entries
 
         entries = build_pick_ledger_entries(
-            verdicts=[{"ticker": "NVDA", "final_action": "BUY", "confidence_score": 80.0}],
+            verdicts=[
+                {"ticker": "NVDA", "final_action": "BUY", "confidence_score": 80.0}
+            ],
             picks=[],  # no picks — NVDA not in price lookup
             month_id="2026-04",
             entry_spy_price=520.0,
@@ -408,7 +414,9 @@ class TestBuildPerformanceSnapshot:
     def test_mixed_status_counts(self):
         from screener.performance.tracker import build_performance_snapshot
 
-        entries = self._make_ledger_entries(4, "active") + self._make_ledger_entries(2, "closed")
+        entries = self._make_ledger_entries(4, "active") + self._make_ledger_entries(
+            2, "closed"
+        )
         snap = build_performance_snapshot("2026-04", entries, entry_spy_price=510.0)
         assert snap["total_picks"] == 6
         assert snap["active_picks"] == 4
@@ -686,7 +694,9 @@ class TestPerformanceWriteNonDryRun:
     def _perf_calls(self, mock_dao: MagicMock) -> list:
         from screener.lib.storage.schema import PERFORMANCE
 
-        return [call for call in mock_dao.set.call_args_list if call[0][0] == PERFORMANCE]
+        return [
+            call for call in mock_dao.set.call_args_list if call[0][0] == PERFORMANCE
+        ]
 
     def test_performance_collection_receives_writes(self):
         mock_dao = _run_main({"MONTH_ID": "2026-05", "DRY_RUN": "false"})
@@ -763,7 +773,9 @@ class TestPerformanceWriteDryRun:
     def _perf_calls(self, mock_dao: MagicMock) -> list:
         from screener.lib.storage.schema import PERFORMANCE
 
-        return [call for call in mock_dao.set.call_args_list if call[0][0] == PERFORMANCE]
+        return [
+            call for call in mock_dao.set.call_args_list if call[0][0] == PERFORMANCE
+        ]
 
     def test_no_performance_writes_in_dry_run(self):
         mock_dao = _run_main({"MONTH_ID": "2026-05", "DRY_RUN": "true"})

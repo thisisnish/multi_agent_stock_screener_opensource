@@ -243,9 +243,51 @@ def main() -> None:
 
     import asyncio
 
+    # Build today's date string for latest_screening_date field
+    screening_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
     graph = build_debate_graph(app_config=app_config, dao=dao)
 
+    async def _write_ticker_docs(scored_entries: list[dict]) -> None:
+        """Upsert one master record per ticker into tickers/ collection.
+
+        Written for every scored ticker (not just top-N picks) so the
+        collection provides a complete sector inventory queryable for
+        sector-cap enforcement verification and general reference.
+        """
+        from screener.lib.storage.schema import TICKERS, TickerSignalDoc, ticker_doc_id
+
+        for entry in scored_entries:
+            sym = entry["symbol"]
+            technical_raw = entry.get("technical") or {}
+            ma200_gate = entry.get("ma200_gate") or {}
+            above = ma200_gate.get("multiplier", 1.0) == 1.0
+
+            doc = TickerSignalDoc(
+                symbol=sym,
+                latest_screening_date=screening_date,
+                technical=factor_scores["technical"].get(sym) or 0.0,
+                earnings=factor_scores["earnings"].get(sym) or 0.0,
+                fcf=factor_scores["fcf"].get(sym) or 0.0,
+                ebitda=factor_scores["ebitda"].get(sym) or 0.0,
+                composite_score=entry["composite_score"],
+                sector=entry.get("sector", "Unknown"),
+                price=technical_raw.get("price"),
+                above_ma200=above,
+                active=True,
+            )
+            await dao.set(TICKERS, ticker_doc_id(sym), doc.model_dump(mode="json"))
+            logger.debug("ticker doc written — %s", sym)
+
+        logger.info("tickers/ collection updated — %d docs", len(scored_entries))
+
     async def _run_pipeline() -> list[dict]:
+        # Write tickers/ master collection for all scored tickers before debate.
+        # Done unconditionally of dry_run so even dry runs populate the
+        # collection snapshot — callers can inspect without triggering debate.
+        if not dry_run:
+            await _write_ticker_docs(gated)
+
         results = []
         for pick in picks:
             symbol = pick["symbol"]

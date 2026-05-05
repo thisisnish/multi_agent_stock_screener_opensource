@@ -325,3 +325,29 @@ def test_embed_chunks_does_not_mutate_input():
     for original, chunk in zip(originals, chunks):
         assert "embedding" not in chunk
         assert chunk == original
+
+
+# ---------------------------------------------------------------------------
+# get_disclosure_chunks_async — filters propagation
+# ---------------------------------------------------------------------------
+
+
+def test_get_disclosure_chunks_async_passes_ticker_filter():
+    """vector_search is called with filters={"ticker": <UPPER>} for brute-force scoping."""
+    from screener.edgar.retriever import get_disclosure_chunks_async
+    from screener.lib.storage.schema import CHUNKS
+
+    dao = _mock_dao()
+    embedder = _mock_embedder(embedding_dim=4)
+
+    asyncio.run(
+        get_disclosure_chunks_async("aapl", dao, embedder, top_k=3, threshold=0.5)
+    )
+
+    dao.vector_search.assert_awaited_once_with(
+        CHUNKS,
+        embedder.embed_query.return_value,
+        top_k=3,
+        threshold=0.5,
+        filters={"ticker": "AAPL"},
+    )

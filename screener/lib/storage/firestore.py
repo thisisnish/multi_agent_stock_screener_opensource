@@ -24,7 +24,7 @@ import logging
 import os
 from typing import Any
 
-from google.api_core.exceptions import NotFound
+from google.api_core.exceptions import InvalidArgument, NotFound
 from google.cloud import firestore
 from google.cloud.firestore_v1.async_client import AsyncClient
 from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
@@ -144,12 +144,14 @@ class FirestoreDAO(StorageDAO):
         embedding: list[float],
         top_k: int,
         threshold: float,
+        filters: dict | None = None,
     ) -> list[dict]:
         """Nearest-neighbour search using Firestore's native ``find_nearest`` API.
 
-        Queries the ``_EMBEDDING_FIELD`` vector field with COSINE distance,
-        returns up to ``top_k`` results, and post-filters any result whose
-        similarity score is below ``threshold``.
+        Attempts Firestore's native ANN search first.  When the API rejects the
+        query vector because it exceeds the 2048-dimension limit, falls back to
+        a brute-force cosine similarity scan over the collection (or a
+        pre-filtered subset when ``filters`` is provided).
 
         The similarity score injected into each result as ``_score`` is derived
         from the COSINE distance returned by Firestore:
@@ -160,6 +162,10 @@ class FirestoreDAO(StorageDAO):
             embedding: Dense query vector.
             top_k: Maximum number of candidates to fetch from Firestore.
             threshold: Minimum similarity (0–1); results below this are dropped.
+            filters: Optional ``{field: value}`` equality constraints applied
+                during the brute-force fallback to narrow the candidate set
+                before computing cosine similarity.  Ignored on the native ANN
+                path.  Defaults to ``None`` (scan whole collection on fallback).
 
         Returns:
             List of document dicts (with ``_score`` injected), ordered by
@@ -174,7 +180,20 @@ class FirestoreDAO(StorageDAO):
             limit=top_k,
         )
 
-        snaps = await vector_query.get()
+        try:
+            snaps = await vector_query.get()
+        except InvalidArgument as exc:
+            if "Vectors must be at most" not in str(exc):
+                raise
+            logger.warning(
+                "Firestore find_nearest rejected %d-dim vector; falling back to "
+                "brute-force cosine (collection=%s)",
+                len(embedding),
+                collection,
+            )
+            return await self._brute_force_cosine(
+                collection, embedding, top_k, threshold, filters
+            )
 
         results: list[dict] = []
         for snap in snaps:
@@ -198,6 +217,97 @@ class FirestoreDAO(StorageDAO):
                 "collection": collection,
                 "top_k": top_k,
                 "threshold": threshold,
+                "returned": len(results),
+            },
+        )
+        return results
+
+    async def _brute_force_cosine(
+        self,
+        collection: str,
+        embedding: list[float],
+        top_k: int,
+        threshold: float,
+        filters: dict | None,
+    ) -> list[dict]:
+        """Brute-force cosine similarity scan used when find_nearest is unavailable.
+
+        Fetches all candidate documents (optionally pre-filtered by ``filters``),
+        computes cosine similarity against ``embedding``, drops candidates below
+        ``threshold``, and returns the top ``top_k`` results sorted by descending
+        similarity.
+
+        Args:
+            collection: Collection to scan.
+            embedding: Dense query vector.
+            top_k: Maximum results to return.
+            threshold: Minimum similarity to include a result.
+            filters: Optional ``{field: value}`` equality constraints applied
+                as Firestore ``where`` clauses before fetching documents.
+
+        Returns:
+            List of document dicts with ``_score`` injected, sorted by
+            descending similarity.
+        """
+        # Use numpy for fast dot-product/norm if available; fall back to math.
+        try:
+            import numpy as np
+
+            def _cosine(q: list[float], d: list[float]) -> float:
+                qv = np.array(q, dtype=np.float64)
+                dv = np.array(d, dtype=np.float64)
+                norm_q = np.linalg.norm(qv)
+                norm_d = np.linalg.norm(dv)
+                if norm_q == 0.0 or norm_d == 0.0:
+                    return 0.0
+                return float(np.dot(qv, dv) / (norm_q * norm_d))
+
+        except ImportError:
+            import math
+
+            def _cosine(q: list[float], d: list[float]) -> float:  # type: ignore[misc]
+                dot = sum(qi * di for qi, di in zip(q, d))
+                norm_q = math.sqrt(sum(qi * qi for qi in q))
+                norm_d = math.sqrt(sum(di * di for di in d))
+                if norm_q == 0.0 or norm_d == 0.0:
+                    return 0.0
+                return dot / (norm_q * norm_d)
+
+        col_ref: Any = self._client.collection(collection)
+        if filters:
+            for field, value in filters.items():
+                col_ref = col_ref.where(field, "==", value)
+
+        snaps = await col_ref.get()
+
+        q_dim = len(embedding)
+        scored: list[tuple[float, dict]] = []
+        for snap in snaps:
+            if not snap.exists:
+                continue
+            doc = snap.to_dict() or {}
+            stored = doc.get(_EMBEDDING_FIELD)
+            if not stored or len(stored) != q_dim:
+                # Dimension mismatch or missing field — skip silently.
+                continue
+            score = _cosine(embedding, stored)
+            if score >= threshold:
+                scored.append((score, doc))
+
+        scored.sort(key=lambda t: t[0], reverse=True)
+
+        results: list[dict] = []
+        for score, doc in scored[:top_k]:
+            doc["_score"] = round(score, 6)
+            results.append(doc)
+
+        logger.debug(
+            "brute_force_cosine complete",
+            extra={
+                "collection": collection,
+                "top_k": top_k,
+                "threshold": threshold,
+                "candidates_scanned": len(snaps),
                 "returned": len(results),
             },
         )

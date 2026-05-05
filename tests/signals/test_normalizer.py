@@ -113,15 +113,15 @@ class TestDegenerateSectors:
         for sym in symbols:
             assert scores[sym] == pytest.approx(50.0)
 
-    def test_sector_below_min_size_all_none(self):
-        """Fewer than MIN_SECTOR_SIZE valid tickers → all None."""
+    def test_sector_below_min_size_returns_neutral(self):
+        """Fewer than MIN_SECTOR_SIZE valid tickers → all 50.0 (neutral, no peer comparison)."""
         symbols = [f"S{i}" for i in range(MIN_SECTOR_SIZE - 1)]
         signals = {sym: _signal(0.05) for sym in symbols}
         sector_map = {sym: SECTOR_A for sym in symbols}
 
         scores = sector_z_scores(signals, VALUE_KEY, sector_map)
         for sym in symbols:
-            assert scores[sym] is None
+            assert scores[sym] == pytest.approx(50.0)
 
     def test_exactly_min_sector_size_scored(self):
         """Exactly MIN_SECTOR_SIZE → scoring is applied (not all None)."""

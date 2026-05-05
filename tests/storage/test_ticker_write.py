@@ -269,6 +269,8 @@ def _mock_dao() -> MagicMock:
     """Return a mock FirestoreDAO whose set() is an awaitable no-op."""
     dao = MagicMock()
     dao.set = AsyncMock(return_value=None)
+    # Return None so the idempotency gate in _run_pipeline does not skip the debate.
+    dao.get = AsyncMock(return_value=None)
     return dao
 
 
@@ -480,9 +482,9 @@ class TestTickerWriteNonDryRun:
         )
 
     def test_total_set_calls_includes_tickers_and_picks(self):
-        """Two tickers + one screenings + two pick ledger entries + two perf ledger entries + one perf snapshot = 8."""
+        """Two tickers + one screenings + two analysis + two pick ledger entries + two perf ledger entries + one perf snapshot = 10."""
         mock_dao = _run_main({"MONTH_ID": "2026-05", "DRY_RUN": "false"})
-        assert mock_dao.set.call_count == 8
+        assert mock_dao.set.call_count == 10
 
 
 class TestTickerWriteDryRun:

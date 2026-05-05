@@ -45,7 +45,7 @@ from screener.agents.state import DebateState
 from screener.edgar.retriever import get_disclosure_chunks_async
 from screener.lib.agent_creator import get_structured_llm
 from screener.lib.models import BearCaseOutput, BullCaseOutput, JudgeOutput
-from screener.lib.storage.schema import MEMORY, memory_doc_id
+from screener.lib.storage.schema import memory_collection_path, memory_doc_id
 from screener.metrics.confidence_scorer import score_judge_confidence
 from screener.metrics.conviction_scorer import score_conviction
 
@@ -76,27 +76,49 @@ def make_memory_read_node(dao: "StorageDAO"):
 
     async def memory_read(state: DebateState) -> dict:
         ticker = state["ticker"]
-        doc_id = memory_doc_id(ticker)
-        doc: dict | None = await dao.get(MEMORY, doc_id)
+        month_id = state["month_id"]
+        col_path = memory_collection_path(ticker)
 
-        if doc is None:
-            logger.debug("No memory doc found for ticker=%s", ticker)
+        # Fetch all month docs from tickers/{SYMBOL}/memory subcollection
+        all_month_docs: list[dict] = await dao.query(col_path, {})
+
+        if not all_month_docs:
+            logger.debug("No memory docs found for ticker=%s", ticker)
             return {
                 "memory_doc": None,
                 "scoring_weights": None,
                 "prior_months": {},
             }
 
-        scoring_weights = doc.get("scoring_weights")
-        # The memory doc stores verdicts under "weeks" (historical key name)
-        # but we use month_id keys in practice — expose as prior_months
-        prior_months: dict = dict(doc.get("weeks", {}))
+        # Build prior_months map: {month_id: verdict_dict}
+        # Exclude the current month (we're writing it this run)
+        prior_months: dict = {}
+        scoring_weights = None
+        current_month_doc = None
+
+        for doc in all_month_docs:
+            doc_month = doc.get("month_id")
+            if doc_month == month_id:
+                current_month_doc = doc
+                scoring_weights = doc.get("scoring_weights")
+            elif doc_month and doc.get("verdict"):
+                prior_months[doc_month] = doc["verdict"]
+
+        # If no current month doc yet, pull scoring_weights from most recent past month
+        if scoring_weights is None and all_month_docs:
+            sorted_docs = sorted(
+                (d for d in all_month_docs if d.get("month_id")),
+                key=lambda d: d["month_id"],
+                reverse=True,
+            )
+            if sorted_docs:
+                scoring_weights = sorted_docs[0].get("scoring_weights")
 
         logger.debug(
             "Loaded memory for ticker=%s: %d prior months", ticker, len(prior_months)
         )
         return {
-            "memory_doc": doc,
+            "memory_doc": current_month_doc,
             "scoring_weights": scoring_weights,
             "prior_months": prior_months,
         }
@@ -435,11 +457,9 @@ def make_memory_write_node(dao: "StorageDAO"):
     async def memory_write(state: DebateState) -> dict:
         ticker = state["ticker"]
         month_id = state["month_id"]
-        doc: dict = dict(state.get("memory_doc") or {})
+        existing_doc: dict = dict(state.get("memory_doc") or {})
 
-        # Preserve existing verdict history; add/overwrite current month
-        weeks: dict = dict(doc.get("weeks", {}))
-        weeks[month_id] = {
+        verdict = {
             "action": state["final_action"],
             "confidence": (state.get("confidence_score") or 50.0) / 100.0,
             "horizon": state["horizon"],
@@ -450,14 +470,16 @@ def make_memory_write_node(dao: "StorageDAO"):
 
         new_doc = {
             "ticker": ticker,
-            "scoring_weights": doc.get(
+            "month_id": month_id,
+            "scoring_weights": existing_doc.get(
                 "scoring_weights",
                 {"bull_weight": 0.5, "bear_weight": 0.5, "sample_size": 0},
             ),
-            "weeks": weeks,
+            "verdict": verdict,
         }
 
-        await dao.set(MEMORY, memory_doc_id(ticker), new_doc)
+        col_path = memory_collection_path(ticker)
+        await dao.set(col_path, memory_doc_id(month_id), new_doc)
 
         logger.debug(
             "Memory written for ticker=%s month_id=%s action=%s",

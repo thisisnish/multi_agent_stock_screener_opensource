@@ -26,9 +26,9 @@ class DebateState(TypedDict, total=False):
             Judge prompt as prior-month feedback.
 
     memory_read outputs:
-        memory_doc: Raw dict from StorageDAO.get(MEMORY, ...) or None.
+        memory_doc: Raw dict for the current month from the memory subcollection, or None.
         scoring_weights: Adaptive bull/bear weights from episodic memory, or None.
-        prior_months: Dict of {month_id: WeekVerdict-like dict} from memory.
+        prior_months: Dict of {month_id: MonthVerdict-like dict} from past memory docs.
 
     build_context outputs:
         disclosure_block: Formatted EDGAR disclosure text or None.

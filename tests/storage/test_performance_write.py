@@ -28,7 +28,7 @@ build_debate_graph, all signal fetchers, and fetch_spy_price are fully mocked.
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 

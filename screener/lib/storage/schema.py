@@ -6,6 +6,7 @@ Collection layout (mirrors the private reference implementation):
 
     tickers/                              — per-ticker signal data
     tickers/{SYMBOL}/memory/{MONTH_ID}    — per-ticker episodic memory (subcollection)
+    signals/     — monthly raw signal snapshots written by financial_update_job
     picks/       — monthly screener top-N snapshots (screener_picks)
     performance/ — monthly P&L snapshots and pick ledger
     chunks/      — EDGAR 10-K/10-Q text chunks with vector embeddings (disclosure_chunks)
@@ -14,6 +15,7 @@ Collection layout (mirrors the private reference implementation):
 
 Doc ID conventions:
     - screening_{YYYYMMDD}              → tickers
+    - {TICKER}_{YYYY-MM}                → signals docs (e.g. "AAPL_2026-04")
     - picks_{YYYYWW}                    → picks snapshot (legacy; not used in write path)
     - perf_{YYYYWW}                     → performance snapshots
     - {TICKER}_{YYYY-MM}_{source}       → pick ledger entries (e.g. "AAPL_2026-04_judge")
@@ -41,6 +43,7 @@ from pydantic import BaseModel, Field
 
 TICKERS: str = "tickers"
 MEMORY: str = "memory"
+SIGNALS: str = "signals"
 PICKS: str = "picks"
 PERFORMANCE: str = "performance"
 CHUNKS: str = "chunks"
@@ -149,6 +152,19 @@ def memory_doc_id(month_id: str) -> str:
     return month_id
 
 
+def signal_doc_id(ticker: str, month_id: str) -> str:
+    """Doc ID for a monthly raw-signal snapshot in the ``signals`` collection.
+
+    Args:
+        ticker: Upper-case ticker symbol, e.g. ``"AAPL"``.
+        month_id: Month identifier in ``"YYYY-MM"`` format, e.g. ``"2026-04"``.
+
+    Returns:
+        e.g. ``"AAPL_2026-04"``
+    """
+    return f"{ticker.upper()}_{month_id}"
+
+
 def current_month_id(dt: datetime | None = None) -> str:
     """Return the month ID string for a datetime, e.g. ``"2026-04"``.
 
@@ -230,6 +246,39 @@ class TickerSignalDoc(BaseModel):
     sector: str
     price: Optional[float] = None
     above_ma200: Optional[bool] = None
+
+
+class SignalDoc(BaseModel):
+    """Schema for a document in the ``signals`` collection.
+
+    Written by ``financial_update_job`` after fetching earnings, FCF, and
+    EBITDA signals for a single ticker.  One document per ticker per month.
+
+    Doc ID: ``{TICKER}_{MONTH_ID}`` (e.g. ``"AAPL_2026-04"``).
+    Firestore path: ``signals/AAPL_2026-04``.
+
+    The ``set()`` DAO method is used for writes, which is idempotent (upsert):
+    re-running the job for the same month safely overwrites the document.
+    """
+
+    ticker: str
+    month_id: str
+    fetched_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    earnings_yield: Optional[float] = None
+    trailing_eps: Optional[float] = None
+    price: Optional[float] = None
+    earnings_skipped: bool = False
+    earnings_skip_reason: Optional[str] = None
+    fcf_yield: Optional[float] = None
+    free_cashflow: Optional[float] = None
+    market_cap: Optional[float] = None
+    fcf_skipped: bool = False
+    fcf_skip_reason: Optional[str] = None
+    ebitda_ev: Optional[float] = None
+    ebitda: Optional[float] = None
+    enterprise_value: Optional[float] = None
+    ebitda_skipped: bool = False
+    ebitda_skip_reason: Optional[str] = None
 
 
 class ScoringWeights(BaseModel):

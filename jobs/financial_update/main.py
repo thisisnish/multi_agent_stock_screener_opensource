@@ -1,8 +1,8 @@
 """
 jobs/financial_update/main.py — Cloud Run Job entry point.
 
-Refreshes FCF + EBITDA/EV fundamental signals for all configured tickers.
-Writes results to the storage backend (Firestore by default).
+Refreshes FCF + EBITDA/EV fundamental signals for all configured tickers and
+writes the results to the ``signals/{TICKER}_{MONTH_ID}`` Firestore collection.
 
 Environment variables:
     MONTH_ID        — optional YYYY-MM override; defaults to the current month.
@@ -14,6 +14,7 @@ All API keys are injected from Secret Manager (see deploy/deploy_all.sh).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -47,9 +48,49 @@ def _download_configs_from_gcs(bucket_name: str) -> tuple[str, str]:
     return config_path, tickers_path
 
 
+def _build_signal_payload(
+    symbol: str,
+    month_id: str,
+    earnings: dict,
+    fcf: dict,
+    ebitda: dict,
+) -> dict:
+    """Assemble the Firestore document payload for a single ticker's signals.
+
+    Merges earnings, FCF, and EBITDA dicts into the flat ``SignalDoc`` schema.
+    The ``fetched_at`` timestamp is set to UTC now so the document is always
+    stamped with the actual fetch time regardless of any MONTH_ID override.
+    """
+    from screener.lib.storage.schema import SignalDoc
+
+    doc = SignalDoc(
+        ticker=symbol,
+        month_id=month_id,
+        fetched_at=datetime.now(timezone.utc),
+        earnings_yield=earnings.get("earnings_yield"),
+        trailing_eps=earnings.get("trailing_eps"),
+        price=earnings.get("price"),
+        earnings_skipped=bool(earnings.get("skipped", False)),
+        earnings_skip_reason=earnings.get("skip_reason"),
+        fcf_yield=fcf.get("fcf_yield"),
+        free_cashflow=fcf.get("free_cashflow"),
+        market_cap=fcf.get("market_cap"),
+        fcf_skipped=bool(fcf.get("skipped", False)),
+        fcf_skip_reason=fcf.get("skip_reason"),
+        ebitda_ev=ebitda.get("ebitda_ev"),
+        ebitda=ebitda.get("ebitda"),
+        enterprise_value=ebitda.get("enterprise_value"),
+        ebitda_skipped=bool(ebitda.get("skipped", False)),
+        ebitda_skip_reason=ebitda.get("skip_reason"),
+    )
+    # model_dump with mode="json" serialises datetime → ISO string for Firestore.
+    return doc.model_dump(mode="json")
+
+
 def main() -> None:
     from screener.lib.config_loader import load_config
     from screener.lib.storage.firestore import FirestoreDAO
+    from screener.lib.storage.schema import SIGNALS, signal_doc_id
     from screener.metrics.earnings_yield import fetch_earnings_yield
     from screener.metrics.ebitda_ev import fetch_ebitda_ev
     from screener.metrics.fcf_yield import fetch_fcf_yield
@@ -72,11 +113,7 @@ def main() -> None:
         tickers_path = "config/tickers.yaml"
 
     app_config = load_config(path=config_path)
-    # DAO is instantiated here to validate credentials at startup; individual
-    # signal fetchers (yfinance) do not write to storage — that happens in
-    # screener_job.  Kept for symmetry with edgar and screener jobs so the
-    # service account / ADC check fires early.
-    _dao = FirestoreDAO(
+    dao = FirestoreDAO(
         project_id=app_config.storage.firestore.project_id,
         database=app_config.storage.firestore.database,
     )
@@ -98,12 +135,29 @@ def main() -> None:
     errors = 0
     for symbol in tickers:
         try:
-            _ = fetch_earnings_yield([symbol])
-            _ = fetch_fcf_yield([symbol])
-            _ = fetch_ebitda_ev([symbol])
+            earnings = fetch_earnings_yield([symbol]).get(symbol, {})
+            fcf = fetch_fcf_yield([symbol]).get(symbol, {})
+            ebitda = fetch_ebitda_ev([symbol]).get(symbol, {})
+
+            payload = _build_signal_payload(symbol, month_id, earnings, fcf, ebitda)
+            doc_id = signal_doc_id(symbol, month_id)
+
+            if dry_run:
+                logger.info(
+                    "dry_run — skipping write for %s (doc_id=%s)", symbol, doc_id
+                )
+            else:
+                asyncio.run(dao.set(SIGNALS, doc_id, payload))
+                logger.info(
+                    "wrote signals/%s for ticker=%s month_id=%s",
+                    doc_id,
+                    symbol,
+                    month_id,
+                )
+
             success += 1
         except Exception:
-            logger.exception("failed to fetch signals for %s", symbol)
+            logger.exception("failed to fetch/write signals for %s", symbol)
             errors += 1
 
     logger.info(

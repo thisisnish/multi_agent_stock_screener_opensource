@@ -306,7 +306,9 @@ def main() -> None:
 
     if not dry_run:
         if app_config.notifications.email.enabled:
-            send_email(cfg=app_config, picks=picks, date=month_id, verdicts=email_verdicts)
+            send_email(
+                cfg=app_config, picks=picks, date=month_id, verdicts=email_verdicts
+            )
             logger.info("email report sent")
         else:
             logger.info("email disabled in config — skipping")

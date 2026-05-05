@@ -272,9 +272,41 @@ def main() -> None:
 
     verdicts = asyncio.run(_run_pipeline())
 
+    # Reshape raw DebateState dicts into the flat shape expected by
+    # build_verdicts_table_html: {symbol, verdict, margin, confidence, decisive_factor}.
+    # The graph state uses different key names:
+    #   ticker        -> symbol
+    #   final_action  -> verdict
+    #   judge_output.margin_of_victory -> margin  (Pydantic model or already-serialized dict)
+    #   confidence_score               -> confidence
+    #   judge_output.decisive_factor   -> decisive_factor
+    def _reshape_verdict(state: dict) -> dict:
+        judge = state.get("judge_output") or {}
+        # judge_output may be a Pydantic model (JudgeOutput) or already a dict
+        if hasattr(judge, "margin_of_victory"):
+            margin_raw = judge.margin_of_victory
+            decisive = judge.decisive_factor
+        else:
+            margin_raw = judge.get("margin_of_victory", "—")
+            decisive = judge.get("decisive_factor", "—")
+
+        # Convert DECISIVE/NARROW/CONTESTED labels to numeric margin score (0–100)
+        margin_map = {"DECISIVE": 75.0, "NARROW": 55.0, "CONTESTED": 45.0}
+        margin = margin_map.get(str(margin_raw), None)
+
+        return {
+            "symbol": state.get("ticker", "?"),
+            "verdict": state.get("final_action", "—"),
+            "margin": margin,
+            "confidence": state.get("confidence_score"),
+            "decisive_factor": decisive or "—",
+        }
+
+    email_verdicts = [_reshape_verdict(v) for v in verdicts]
+
     if not dry_run:
         if app_config.notifications.email.enabled:
-            send_email(cfg=app_config, picks=picks, date=month_id, verdicts=verdicts)
+            send_email(cfg=app_config, picks=picks, date=month_id, verdicts=email_verdicts)
             logger.info("email report sent")
         else:
             logger.info("email disabled in config — skipping")

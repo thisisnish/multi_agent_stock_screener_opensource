@@ -330,6 +330,19 @@ def main() -> None:
                 )
             logger.info("picks written to storage")
 
+            # Write performance/ collection: per-pick ledger entries + monthly
+            # snapshot aggregate.  Done after picks/ so performance docs are
+            # always a strict superset of pick data.
+            from screener.performance.tracker import write_performance_docs
+
+            await write_performance_docs(
+                dao=dao,
+                month_id=month_id,
+                verdicts=results,
+                picks=picks,
+                source="judge",
+            )
+
         return results
 
     verdicts = asyncio.run(_run_pipeline())

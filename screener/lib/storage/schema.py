@@ -14,7 +14,8 @@ Collection layout (mirrors the private reference implementation):
     events/      — pipeline lifecycle events (screener_events)
 
 Doc ID conventions:
-    - screening_{YYYYMMDD}              → tickers
+    - {TICKER}                          → tickers master record (e.g. "AAPL")
+    - screening_{YYYYMMDD}              → legacy daily snapshot (unused in write path)
     - {TICKER}_{YYYY-MM}                → signals docs (e.g. "AAPL_2026-04")
     - picks_{YYYYWW}                    → picks snapshot (legacy; not used in write path)
     - perf_{YYYYWW}                     → performance snapshots
@@ -152,6 +153,22 @@ def memory_doc_id(month_id: str) -> str:
     return month_id
 
 
+def ticker_doc_id(ticker: str) -> str:
+    """Doc ID for a master ticker record in the ``tickers`` collection.
+
+    The ticker symbol is used directly (upper-cased) as the Firestore doc ID
+    so that ``tickers/AAPL`` is the stable reference for all subcollections
+    (e.g. ``tickers/AAPL/memory``).
+
+    Args:
+        ticker: Ticker symbol (any case).
+
+    Returns:
+        Upper-cased ticker symbol, e.g. ``"AAPL"``
+    """
+    return ticker.upper()
+
+
 def signal_doc_id(ticker: str, month_id: str) -> str:
     """Doc ID for a monthly raw-signal snapshot in the ``signals`` collection.
 
@@ -233,11 +250,16 @@ def current_quarter_id(dt: datetime | None = None) -> str:
 class TickerSignalDoc(BaseModel):
     """Schema for a document in the ``tickers`` collection.
 
-    Stores the most recent composite signal data for a single ticker.
+    One document per ticker (doc ID = upper-case symbol, e.g. ``tickers/AAPL``).
+    Written (upserted) by ``screener_job`` after the scoring step so the
+    collection always reflects the latest composite signal snapshot.
+
+    The document is the stable anchor for subcollections:
+    ``tickers/{SYMBOL}/memory`` stores episodic debate history.
     """
 
     symbol: str
-    screening_date: str
+    latest_screening_date: str
     technical: float
     earnings: float
     fcf: float
@@ -246,6 +268,7 @@ class TickerSignalDoc(BaseModel):
     sector: str
     price: Optional[float] = None
     above_ma200: Optional[bool] = None
+    active: bool = True
 
 
 class SignalDoc(BaseModel):

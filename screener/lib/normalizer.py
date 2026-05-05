@@ -7,7 +7,7 @@ Formula:
 
 Guards:
     - Sector std = 0 → return 50.0 (neutral) for all tickers in that sector
-    - Sector < MIN_SECTOR_SIZE valid tickers → return None for all
+    - Sector < MIN_SECTOR_SIZE valid tickers → return 50.0 (neutral) for all
     - Missing / None value → return None (sector-neutral imputation handled by caller)
 """
 
@@ -56,6 +56,7 @@ def sector_z_scores(
         sector_values.setdefault(sector, []).append((symbol, val))
 
     sector_stats: dict[str, tuple[float, float]] = {}
+    small_sectors: set[str] = set()
 
     for sector, entries in sector_values.items():
         if len(entries) < MIN_SECTOR_SIZE:
@@ -63,6 +64,7 @@ def sector_z_scores(
                 "sector below min size — returning neutral",
                 extra={"sector": sector, "size": len(entries), "min": MIN_SECTOR_SIZE},
             )
+            small_sectors.add(sector)
             continue
         values = [v for _, v in entries]
         mean = statistics.mean(values)
@@ -76,6 +78,10 @@ def sector_z_scores(
 
         if data.get("skipped") or data.get(value_key) is None:
             scores[symbol] = None
+            continue
+
+        if sector in small_sectors:
+            scores[symbol] = 50.0
             continue
 
         if sector not in sector_stats:

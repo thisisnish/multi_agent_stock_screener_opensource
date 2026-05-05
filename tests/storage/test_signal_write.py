@@ -17,13 +17,10 @@ are fully mocked.
 
 from __future__ import annotations
 
-import asyncio
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # Ensure project root is importable (mirrors conftest.py behaviour)

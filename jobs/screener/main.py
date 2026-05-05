@@ -253,11 +253,26 @@ def main() -> None:
                 pick_ledger_doc_id,
             )
 
+            def _to_serializable(obj):
+                from pydantic import BaseModel
+
+                if isinstance(obj, BaseModel):
+                    return obj.model_dump()
+                if isinstance(obj, dict):
+                    return {k: _to_serializable(v) for k, v in obj.items()}
+                if isinstance(obj, list):
+                    return [_to_serializable(v) for v in obj]
+                return obj
+
             week_id = current_week_id()
             for verdict in verdicts:
                 symbol = verdict.get("ticker", "UNKNOWN")
                 doc_id = pick_ledger_doc_id(symbol, week_id)
-                await dao.set(PICKS, doc_id, {**verdict, "entry_month": month_id})
+                await dao.set(
+                    PICKS,
+                    doc_id,
+                    _to_serializable({**verdict, "entry_month": month_id}),
+                )
 
         asyncio.run(_write_picks())
         logger.info("picks written to storage")

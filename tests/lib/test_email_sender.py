@@ -19,6 +19,7 @@ from screener.lib.config_loader import (
 from screener.lib.email_sender import (
     _fmt,
     _fmt_pct,
+    _month_label,
     build_email_html,
     build_performance_html,
     build_picks_table_html,
@@ -112,6 +113,42 @@ def _stub_cfg(
             )
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# _month_label helper
+# ---------------------------------------------------------------------------
+
+
+def test_month_label_formats_yyyy_mm():
+    assert _month_label("2026-04") == "April 2026"
+
+
+def test_month_label_january():
+    assert _month_label("2026-01") == "January 2026"
+
+
+def test_month_label_december():
+    assert _month_label("2025-12") == "December 2025"
+
+
+def test_month_label_fallback_on_plain_date():
+    # A plain date string (not YYYY-MM) is returned unchanged.
+    assert _month_label("2026-04-30") == "2026-04-30"
+
+
+def test_month_label_fallback_on_arbitrary_string():
+    assert _month_label("Q2-2026") == "Q2-2026"
+
+
+def test_picks_table_heading_shows_month_name_for_month_id():
+    html = build_picks_table_html([_stub_pick()], "2026-04")
+    assert "April 2026" in html
+
+
+def test_picks_table_heading_unchanged_for_plain_date():
+    html = build_picks_table_html([_stub_pick()], "2026-04-30")
+    assert "2026-04-30" in html
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +471,24 @@ def test_send_email_subject_uses_prefix(monkeypatch):
 
     payload = mock_post.call_args.kwargs["json"]
     assert payload["subject"].startswith("[My Screener]")
+
+
+def test_send_email_subject_shows_month_name(monkeypatch):
+    """When date is a YYYY-MM month_id the subject shows 'Month YYYY'."""
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    cfg = _stub_cfg()
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch(
+        "screener.lib.email_sender.requests.post", return_value=mock_resp
+    ) as mock_post:
+        send_email(cfg, [_stub_pick()], "2026-04")
+
+    payload = mock_post.call_args.kwargs["json"]
+    assert "April 2026" in payload["subject"]
 
 
 def test_send_email_api_error_returns_false(monkeypatch):

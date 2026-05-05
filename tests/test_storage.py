@@ -606,8 +606,19 @@ class TestDocIdHelpers:
     def test_perf_snapshot_doc_id(self):
         assert perf_snapshot_doc_id("202618") == "perf_202618"
 
+    def test_pick_ledger_doc_id_month_id_and_source(self):
+        assert pick_ledger_doc_id("aapl", "2026-04") == "AAPL_2026-04_judge"
+
+    def test_pick_ledger_doc_id_custom_source(self):
+        assert (
+            pick_ledger_doc_id("MSFT", "2026-04", source="bull") == "MSFT_2026-04_bull"
+        )
+
     def test_pick_ledger_doc_id_uppercases_ticker(self):
-        assert pick_ledger_doc_id("aapl", "202618") == "AAPL_202618"
+        assert (
+            pick_ledger_doc_id("aapl", "2026-04", source="judge")
+            == "AAPL_2026-04_judge"
+        )
 
     def test_memory_doc_id_returns_month_id_unchanged(self):
         assert memory_doc_id("2026-04") == "2026-04"

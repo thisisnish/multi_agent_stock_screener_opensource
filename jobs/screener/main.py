@@ -242,7 +242,6 @@ def main() -> None:
         if not dry_run:
             from screener.lib.storage.schema import (
                 PICKS,
-                current_week_id,
                 pick_ledger_doc_id,
             )
 
@@ -257,14 +256,15 @@ def main() -> None:
                     return [_to_serializable(v) for v in obj]
                 return obj
 
-            week_id = current_week_id()
             for verdict in results:
                 symbol = verdict.get("ticker", "UNKNOWN")
-                doc_id = pick_ledger_doc_id(symbol, week_id)
+                doc_id = pick_ledger_doc_id(symbol, month_id, source="judge")
                 await dao.set(
                     PICKS,
                     doc_id,
-                    _to_serializable({**verdict, "entry_month": month_id}),
+                    _to_serializable(
+                        {**verdict, "entry_month": month_id, "source": "judge"}
+                    ),
                 )
             logger.info("picks written to storage")
 

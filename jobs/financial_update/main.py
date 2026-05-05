@@ -98,9 +98,9 @@ def main() -> None:
     errors = 0
     for symbol in tickers:
         try:
-            _ = fetch_earnings_yield(symbol)
-            _ = fetch_fcf_yield(symbol)
-            _ = fetch_ebitda_ev(symbol)
+            _ = fetch_earnings_yield([symbol])
+            _ = fetch_fcf_yield([symbol])
+            _ = fetch_ebitda_ev([symbol])
             success += 1
         except Exception:
             logger.exception("failed to fetch signals for %s", symbol)

@@ -46,9 +46,11 @@ from screener.lib.storage.schema import (
     PICKS,
     TICKERS,
     chunk_doc_id,
+    current_month_id,
     current_quarter_id,
     current_week_id,
     eval_doc_id,
+    memory_collection_path,
     memory_doc_id,
     perf_snapshot_doc_id,
     pick_ledger_doc_id,
@@ -172,10 +174,13 @@ class TestFirestoreDAOSet:
         doc_ref.set = AsyncMock(return_value=None)
         mock_client.collection.return_value.document.return_value = doc_ref
 
-        asyncio.run(dao.set(MEMORY, "AAPL", {"ticker": "AAPL"}))
+        col_path = memory_collection_path("AAPL")
+        asyncio.run(
+            dao.set(col_path, "2026-04", {"ticker": "AAPL", "month_id": "2026-04"})
+        )
 
-        mock_client.collection.assert_called_with(MEMORY)
-        mock_client.collection.return_value.document.assert_called_with("AAPL")
+        mock_client.collection.assert_called_with(col_path)
+        mock_client.collection.return_value.document.assert_called_with("2026-04")
 
 
 # ---------------------------------------------------------------------------
@@ -566,6 +571,16 @@ class TestSchemaCollectionConstants:
         assert EVAL == "eval"
         assert EVENTS == "events"
 
+    def test_memory_collection_path_returns_subcollection_path(self):
+        assert memory_collection_path("AAPL") == "tickers/AAPL/memory"
+
+    def test_memory_collection_path_uppercases_ticker(self):
+        assert memory_collection_path("aapl") == "tickers/AAPL/memory"
+
+    def test_memory_collection_path_handles_special_chars(self):
+        # Ticker slugging is NOT applied here — raw upper() only, matching spec
+        assert memory_collection_path("BRK.B") == "tickers/BRK.B/memory"
+
 
 class TestTickerToSlug:
     def test_lowercase(self):
@@ -594,8 +609,11 @@ class TestDocIdHelpers:
     def test_pick_ledger_doc_id_uppercases_ticker(self):
         assert pick_ledger_doc_id("aapl", "202618") == "AAPL_202618"
 
-    def test_memory_doc_id_uppercases_ticker(self):
-        assert memory_doc_id("aapl") == "AAPL"
+    def test_memory_doc_id_returns_month_id_unchanged(self):
+        assert memory_doc_id("2026-04") == "2026-04"
+
+    def test_memory_doc_id_december(self):
+        assert memory_doc_id("2026-12") == "2026-12"
 
     def test_chunk_doc_id(self):
         assert chunk_doc_id("AAPL", 42) == "aapl_42"
@@ -616,6 +634,27 @@ class TestCurrentWeekId:
     def test_uses_provided_datetime(self):
         dt = datetime(2026, 4, 29, tzinfo=timezone.utc)  # ISO week 18 of 2026
         assert current_week_id(dt) == "202618"
+
+
+class TestCurrentMonthId:
+    def test_returns_yyyy_mm_format(self):
+        mid = current_month_id()
+        assert len(mid) == 7
+        assert mid[4] == "-"
+        assert mid[:4].isdigit()
+        assert mid[5:].isdigit()
+
+    def test_uses_provided_datetime(self):
+        dt = datetime(2026, 4, 29, tzinfo=timezone.utc)
+        assert current_month_id(dt) == "2026-04"
+
+    def test_zero_pads_month(self):
+        dt = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        assert current_month_id(dt) == "2026-01"
+
+    def test_december(self):
+        dt = datetime(2026, 12, 31, tzinfo=timezone.utc)
+        assert current_month_id(dt) == "2026-12"
 
 
 class TestCurrentQuarterId:

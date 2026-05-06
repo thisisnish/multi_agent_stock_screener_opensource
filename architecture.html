@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Architecture — Multi-Agent Stock Screener</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #f0f2f5;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      padding: 44px 40px 60px;
+      color: #111827;
+    }
+
+    .page-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 4px;
+    }
+    .page-sub {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 36px;
+    }
+
+    /* ── Section wrapper ── */
+    .diagram-section {
+      background: #ffffff;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #9ca3af;
+      margin-bottom: 16px;
+    }
+
+    /* ── Generic flow row ── */
+    .flow-row {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+    }
+
+    /* ── Node boxes ── */
+    .node {
+      border-radius: 8px;
+      padding: 10px 14px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .node-title {
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+    .node-sub {
+      font-size: 10px;
+      margin-top: 4px;
+      line-height: 1.4;
+      opacity: 0.8;
+    }
+
+    /* colour variants */
+    .node-gray    { background: #f3f4f6; border: 2px solid #9ca3af; }
+    .node-gray .node-title    { color: #374151; }
+    .node-gray .node-sub      { color: #6b7280; }
+
+    .node-green   { background: #f0fdf4; border: 2px solid #16a34a; }
+    .node-green .node-title   { color: #166534; }
+    .node-green .node-sub     { color: #166534; }
+
+    .node-blue    { background: #eff6ff; border: 2px solid #2563eb; }
+    .node-blue .node-title    { color: #1e40af; }
+    .node-blue .node-sub      { color: #1e40af; }
+
+    .node-amber   { background: #fffbeb; border: 2px solid #d97706; }
+    .node-amber .node-title   { color: #92400e; }
+    .node-amber .node-sub     { color: #92400e; }
+
+    .node-red     { background: #fef2f2; border: 2.5px solid #991b1b; }
+    .node-red .node-title     { color: #991b1b; }
+    .node-red .node-sub       { color: #991b1b; }
+
+    .node-purple  { background: #f5f3ff; border: 2px solid #7c3aed; }
+    .node-purple .node-title  { color: #4c1d95; }
+    .node-purple .node-sub    { color: #4c1d95; }
+
+    .node-red-strong { background: #fef2f2; border: 3px solid #991b1b; }
+    .node-red-strong .node-title { color: #991b1b; }
+    .node-red-strong .node-sub   { color: #7f1d1d; }
+
+    /* ── Arrow connectors ── */
+    .arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0 6px;
+      flex-shrink: 0;
+    }
+    .arrow svg { display: block; }
+    .arrow-label {
+      font-size: 8px;
+      color: #9ca3af;
+      margin-top: 2px;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    /* dashed arrow variant */
+    .arrow-dashed path { stroke-dasharray: 4 3; }
+
+    /* ── Vertical arrow ── */
+    .v-arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 6px 0;
+    }
+    .v-arrow svg { display: block; }
+    .v-arrow-label {
+      font-size: 8px;
+      color: #9ca3af;
+      margin-top: 2px;
+    }
+
+    /* ── Parallel group (Bull + Bear side-by-side) ── */
+    .parallel-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    /* ── Storage badge ── */
+    .storage-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px dashed #e5e7eb;
+    }
+    .store-badge {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 10px;
+    }
+    .store-name {
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-weight: 700;
+      color: #374151;
+      margin-bottom: 2px;
+    }
+    .store-detail {
+      color: #9ca3af;
+      font-size: 9px;
+    }
+
+    /* ── Feedback annotation ── */
+    .feedback-note {
+      font-size: 10px;
+      color: #6b7280;
+      line-height: 1.6;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px dashed #e5e7eb;
+    }
+    .feedback-note strong { color: #374151; }
+  </style>
+</head>
+<body>
+
+  <div class="page-title">Multi-Agent Stock Screener — Architecture</div>
+  <div class="page-sub">Monthly automated pipeline · GCP us-west1 · Firestore + Cloud Run</div>
+
+
+  <!-- ══════════════════════════════════════════════
+       1. MONTHLY PIPELINE
+  ══════════════════════════════════════════════ -->
+  <div class="diagram-section">
+    <div class="section-label">Monthly Pipeline — triggered 1st Friday, 9 AM ET</div>
+
+    <div class="flow-row">
+
+      <!-- Scheduler -->
+      <div class="node node-gray" style="min-width:110px;">
+        <div class="node-title">☁️ Cloud Scheduler</div>
+        <div class="node-sub">cron trigger<br>1st Friday / month</div>
+      </div>
+
+      <div class="arrow">
+        <svg width="28" height="14" viewBox="0 0 28 14" fill="none">
+          <path d="M2 7 H22" stroke="#9ca3af" stroke-width="2" stroke-linecap="round"/>
+          <path d="M17 3 L23 7 L17 11" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <div class="arrow-label">fires</div>
+      </div>
+
+      <!-- Workflow -->
+      <div class="node node-gray" style="min-width:130px; border-color:#6b7280;">
+        <div class="node-title">⚙️ Cloud Workflows</div>
+        <div class="node-sub">stock-screener-<br>monthly-pipeline</div>
+      </div>
+
+      <div class="arrow">
+        <svg width="28" height="14" viewBox="0 0 28 14" fill="none">
+          <path d="M2 7 H22" stroke="#9ca3af" stroke-width="2" stroke-linecap="round"/>
+          <path d="M17 3 L23 7 L17 11" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <div class="arrow-label">step 1</div>
+      </div>
+
+      <!-- Step 1 -->
+      <div class="node node-green" style="min-width:120px;">
+        <div class="node-title">financial_update</div>
+        <div class="node-sub">FCF + EBITDA/EV<br>→ signals/</div>
+      </div>
+
+      <div class="arrow">
+        <svg width="28" height="14" viewBox="0 0 28 14" fill="none">
+          <path d="M2 7 H22" stroke="#16a34a" stroke-width="2" stroke-linecap="round"/>
+          <path d="M17 3 L23 7 L17 11" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <div class="arrow-label">step 2</div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="node node-green" style="min-width:120px;">
+        <div class="node-title">edgar_disclosure</div>
+        <div class="node-sub">10-K / 10-Q index<br>→ chunks/</div>
+      </div>
+
+      <div class="arrow">
+        <svg width="28" height="14" viewBox="0 0 28 14" fill="none">
+          <path d="M2 7 H22" stroke="#16a34a" stroke-width="2" stroke-linecap="round"/>
+          <path d="M17 3 L23 7 L17 11" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <div class="arrow-label">step 3</div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="node node-green" style="min-width:120px; border-color:#15803d; border-width:2.5px;">
+        <div class="node-title">screener_job</div>
+        <div class="node-sub">score → debate<br>→ picks → email</div>
+      </div>
+
+      <div class="arrow">
+        <svg width="28" height="14" viewBox="0 0 28 14" fill="none">
+          <path d="M2 7 H22" stroke="#16a34a" stroke-width="2" stroke-linecap="round"/>
+          <path d="M17 3 L23 7 L17 11" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <div class="arrow-label">step 4</div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="node node-purple" style="min-width:120px;">
+        <div class="node-title">eval GCF</div>
+        <div class="node-sub">score closed picks<br>→ eval/</div>
+      </div>
+
+    </div><!-- end flow-row -->
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════
+       2. DEBATE GRAPH (inside screener_job)
+  ══════════════════════════════════════════════ -->
+  <div class="diagram-section">
+    <div class="section-label">Debate Graph — runs once per top-N ticker (screener_job)</div>
+
+    <div class="flow-row">
+
+      <!-- memory_read -->
+      <div class="node node-amber" style="min-width:110px;">
+        <div class="node-title">memory_read</div>
+        <div class="node-sub">load verdict history<br>compute weights</div>
+      </div>
+
+      <div class="arrow">
+        <svg width="26" height="14" viewBox="0 0 26 14" fill="none">
+          <path d="M2 7 H20" stroke="#d97706" stroke-width="2" stroke-linecap="round"/>
+          <path d="M15 3 L21 7 L15 11" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+
+      <!-- build_context -->
+      <div class="node node-blue" style="min-width:110px;">
+        <div class="node-title">build_context</div>
+        <div class="node-sub">EDGAR vector<br>retrieval (top-5)</div>
+      </div>
+
+      <div class="arrow">
+        <svg width="26" height="14" viewBox="0 0 26 14" fill="none">
+          <path d="M2 7 H20" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/>
+          <path d="M15 3 L21 7 L15 11" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+
+      <!-- Bull + Bear parallel -->
+      <div class="parallel-group">
+        <div class="node node-green" style="min-width:130px;">
+          <div class="node-title">🐂 Bull Agent</div>
+          <div class="node-sub">bullish argument<br>+ signal citations</div>
+        </div>
+        <div class="node node-red" style="min-width:130px;">
+          <div class="node-title">🐻 Bear Agent</div>
+          <div class="node-sub">bearish argument<br>+ signal citations</div>
+        </div>
+      </div>
+
+      <div class="arrow">
+        <svg width="26" height="14" viewBox="0 0 26 14" fill="none">
+          <path d="M2 7 H20" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>
+          <path d="M15 3 L21 7 L15 11" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+
+      <!-- conviction_node -->
+      <div class="node node-gray" style="min-width:110px;">
+        <div class="node-title">conviction</div>
+        <div class="node-sub">source diversity<br>hedge penalty<br>± adaptive weight</div>
+      </div>
+
+      <div class="arrow">
+        <svg width="26" height="14" viewBox="0 0 26 14" fill="none">
+          <path d="M2 7 H20" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>
+          <path d="M15 3 L21 7 L15 11" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+
+      <!-- Judge -->
+      <div class="node node-red-strong" style="min-width:120px;">
+        <div class="node-title">⚖️ Judge</div>
+        <div class="node-sub">BUY / SELL / HOLD<br>+ confidence<br>+ eval_context ↙</div>
+      </div>
+
+      <div class="arrow">
+        <svg width="26" height="14" viewBox="0 0 26 14" fill="none">
+          <path d="M2 7 H20" stroke="#991b1b" stroke-width="2" stroke-linecap="round"/>
+          <path d="M15 3 L21 7 L15 11" stroke="#991b1b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+
+      <!-- hard_rules -->
+      <div class="node node-gray" style="min-width:100px;">
+        <div class="node-title">hard_rules</div>
+        <div class="node-sub">confidence &lt; 40<br>→ force HOLD</div>
+      </div>
+
+      <div class="arrow">
+        <svg width="26" height="14" viewBox="0 0 26 14" fill="none">
+          <path d="M2 7 H20" stroke="#6b7280" stroke-width="2" stroke-linecap="round"/>
+          <path d="M15 3 L21 7 L15 11" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+
+      <!-- memory_write -->
+      <div class="node node-amber" style="min-width:110px;">
+        <div class="node-title">memory_write</div>
+        <div class="node-sub">verdict +<br>scoring_weights<br>→ memory/</div>
+      </div>
+
+    </div><!-- end flow-row -->
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════
+       3. MEMORY + ADAPTIVE WEIGHTS
+  ══════════════════════════════════════════════ -->
+  <div class="diagram-section">
+    <div class="section-label">Episodic Memory + Adaptive Weights</div>
+
+    <div class="flow-row" style="align-items: flex-start; gap: 16px;">
+
+      <!-- Memory doc -->
+      <div style="flex-shrink:0; min-width:200px;">
+        <div class="node node-amber" style="text-align:left; padding:14px 16px;">
+          <div class="node-title" style="font-family: 'SF Mono', monospace; font-size:11px;">tickers/{SYMBOL}/memory/{MONTH_ID}</div>
+          <div class="node-sub" style="margin-top:8px; opacity:1;">
+            verdict: BUY / SELL / HOLD<br>
+            confidence: 0.0 – 1.0<br>
+            winning_side: bull | bear<br>
+            direction_correct: true | false | null<br>
+            scoring_weights: { bull_weight, bear_weight }
+          </div>
+        </div>
+      </div>
+
+      <!-- Arrow right -->
+      <div class="arrow" style="align-self:center;">
+        <svg width="36" height="14" viewBox="0 0 36 14" fill="none">
+          <path d="M2 7 H30" stroke="#d97706" stroke-width="2" stroke-linecap="round"/>
+          <path d="M25 3 L31 7 L25 11" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <div class="arrow-label" style="color:#d97706;">after ≥ 4<br>scored months</div>
+      </div>
+
+      <!-- Adaptive weight logic -->
+      <div style="flex-shrink:0; min-width:220px;">
+        <div class="node node-amber" style="text-align:left; padding:14px 16px;">
+          <div class="node-title">Adaptive Weight Computation</div>
+          <div class="node-sub" style="margin-top:8px; opacity:1; line-height:1.7;">
+            bull_acc = correct bull verdicts / total bull verdicts<br>
+            bear_acc = correct bear verdicts / total bear verdicts<br>
+            bull_weight = bull_acc / (bull_acc + bear_acc)<br>
+            <br>
+            → conviction scores scaled by (weight / 0.5)<br>
+            → weights stored back in memory doc
+          </div>
+        </div>
+      </div>
+
+      <!-- Arrow right -->
+      <div class="arrow" style="align-self:center;">
+        <svg width="36" height="14" viewBox="0 0 36 14" fill="none">
+          <path d="M2 7 H30" stroke="#d97706" stroke-width="2" stroke-linecap="round"/>
+          <path d="M25 3 L31 7 L25 11" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <div class="arrow-label" style="color:#d97706;">injected into</div>
+      </div>
+
+      <!-- Conviction + Judge -->
+      <div class="parallel-group" style="align-self:center;">
+        <div class="node node-gray" style="min-width:140px;">
+          <div class="node-title">conviction_node</div>
+          <div class="node-sub">raw score × (weight / 0.5)<br>clamped to 0 – 100</div>
+        </div>
+        <div class="node node-red-strong" style="min-width:140px;">
+          <div class="node-title">⚖️ Judge prompt</div>
+          <div class="node-sub">"Bull has been X% accurate<br>for this ticker historically"</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="feedback-note" style="margin-top:14px;">
+      <strong>Cold start:</strong> No history → default 50/50 weights. After first 4 scored months (eval sets <code>direction_correct</code>), weights begin adapting per ticker.
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════
+       4. EVAL FEEDBACK LOOP
+  ══════════════════════════════════════════════ -->
+  <div class="diagram-section">
+    <div class="section-label">Eval Feedback Loop — runs monthly (Step 4)</div>
+
+    <div class="flow-row">
+
+      <!-- picks/ -->
+      <div class="node node-gray" style="min-width:110px;">
+        <div class="node-title">picks/</div>
+        <div class="node-sub">closed verdicts<br>from prior month</div>
+      </div>
+
+      <div class="arrow">
+        <svg width="28" height="14" viewBox="0 0 28 14" fill="none">
+          <path d="M2 7 H22" stroke="#7c3aed" stroke-width="2" stroke-linecap="round"/>
+          <path d="M17 3 L23 7 L17 11" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <div class="arrow-label" style="color:#7c3aed;">reads</div>
+      </div>
+
+      <!-- eval GCF -->
+      <div class="node node-purple" style="min-width:150px;">
+        <div class="node-title">eval GCF</div>
+        <div class="node-sub">
+          LLM rubric scoring (0–100)<br>
+          accuracy by confidence tier<br>
+          directional bias detection
+        </div>
+      </div>
+
+      <div class="arrow">
+        <svg width="28" height="14" viewBox="0 0 28 14" fill="none">
+          <path d="M2 7 H22" stroke="#7c3aed" stroke-width="2" stroke-linecap="round"/>
+          <path d="M17 3 L23 7 L17 11" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <div class="arrow-label" style="color:#7c3aed;">writes</div>
+      </div>
+
+      <!-- eval/ -->
+      <div class="node node-purple" style="min-width:130px;">
+        <div class="node-title">eval/{MONTH_ID}</div>
+        <div class="node-sub">
+          overall accuracy<br>
+          bull / bear accuracy<br>
+          acid test by tier
+        </div>
+      </div>
+
+      <div class="arrow arrow-dashed">
+        <svg width="36" height="14" viewBox="0 0 36 14" fill="none">
+          <path d="M2 7 H30" stroke="#991b1b" stroke-width="2" stroke-linecap="round" stroke-dasharray="4 3"/>
+          <path d="M25 3 L31 7 L25 11" stroke="#991b1b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <div class="arrow-label" style="color:#991b1b;">next month<br>injected as</div>
+      </div>
+
+      <!-- eval_context in Judge -->
+      <div class="node node-red-strong" style="min-width:170px;">
+        <div class="node-title">⚖️ Judge — eval_context</div>
+        <div class="node-sub">
+          "Last month: 7/10 correct.<br>
+          Missed 3 bear calls in Tech.<br>
+          High-confidence accuracy: 80%."
+        </div>
+      </div>
+
+      <div class="arrow arrow-dashed">
+        <svg width="36" height="14" viewBox="0 0 36 14" fill="none">
+          <path d="M2 7 H30" stroke="#991b1b" stroke-width="2" stroke-linecap="round" stroke-dasharray="4 3"/>
+          <path d="M25 3 L31 7 L25 11" stroke="#991b1b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <div class="arrow-label" style="color:#991b1b;">also sets</div>
+      </div>
+
+      <!-- direction_correct on memory -->
+      <div class="node node-amber" style="min-width:150px;">
+        <div class="node-title">memory/ direction_correct</div>
+        <div class="node-sub">
+          true | false stamped<br>on each closed verdict<br>→ unlocks adaptive weights
+        </div>
+      </div>
+
+    </div>
+
+    <div class="feedback-note">
+      <strong>Feedback loop:</strong> screener_job (Step 3) loads eval_context from the prior month's eval/ doc before running the debate. The Judge prompt includes the system's own historical accuracy, directional bias, and confidence calibration — so the agent corrects for known failure modes each month.
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════
+       5. FIRESTORE COLLECTIONS
+  ══════════════════════════════════════════════ -->
+  <div class="diagram-section" style="border-color:#ea580c40;">
+    <div class="section-label">Firestore Collections — database: multi-agent-stock-screener</div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px;">
+
+      <div class="store-badge">
+        <div class="store-name">signals/{TICKER}_{MONTH}</div>
+        <div class="store-detail">quarterly fundamentals — FCF, EBITDA, earnings, technical</div>
+      </div>
+      <div class="store-badge">
+        <div class="store-name">tickers/{SYMBOL}</div>
+        <div class="store-detail">master record — composite score, sector, above_ma200</div>
+      </div>
+      <div class="store-badge">
+        <div class="store-name">tickers/{SYMBOL}/memory/{MONTH}</div>
+        <div class="store-detail">episodic verdict history + scoring_weights per ticker</div>
+      </div>
+      <div class="store-badge">
+        <div class="store-name">chunks/{DOC_ID}</div>
+        <div class="store-detail">EDGAR vector chunks (dim 3072) — 10-K / 10-Q</div>
+      </div>
+      <div class="store-badge">
+        <div class="store-name">screenings/{MONTH}</div>
+        <div class="store-detail">full scoring run snapshot — all tickers, sector cap audit</div>
+      </div>
+      <div class="store-badge">
+        <div class="store-name">analysis/{TICKER}_{MONTH}</div>
+        <div class="store-detail">cached debate output — idempotency guard</div>
+      </div>
+      <div class="store-badge">
+        <div class="store-name">picks/{TICKER}_{MONTH}_judge</div>
+        <div class="store-detail">unified pick ledger — verdict, confidence, horizon</div>
+      </div>
+      <div class="store-badge">
+        <div class="store-name">performance/{MONTH}_judge</div>
+        <div class="store-detail">alpha vs SPY, win rate, bull/bear accuracy</div>
+      </div>
+      <div class="store-badge">
+        <div class="store-name">eval/{MONTH}</div>
+        <div class="store-detail">quality metrics, acid test, eval_context for Judge</div>
+      </div>
+      <div class="store-badge">
+        <div class="store-name">events/{UUID}</div>
+        <div class="store-detail">pipeline event log — job_started, job_complete per step</div>
+      </div>
+
+    </div>
+  </div>
+
+</body>
+</html>

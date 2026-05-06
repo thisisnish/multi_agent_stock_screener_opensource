@@ -12,7 +12,7 @@
 #
 # Usage:
 #   export GCP_PROJECT_ID=my-gcp-project
-#   export GCP_REGION=us-central1          # optional, defaults to us-central1
+#   export GCP_REGION=us-west1             # optional, defaults to us-west1
 #   export NOTIFICATION_EMAIL=you@example.com
 #   bash deploy/setup_gcp.sh
 # ---------------------------------------------------------------------------

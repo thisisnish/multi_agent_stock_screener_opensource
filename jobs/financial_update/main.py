@@ -131,6 +131,12 @@ def main() -> None:
 
     logger.info("fetching signals for %d tickers", len(tickers))
 
+    # Fetch signals synchronously, then flush all writes in one asyncio.run()
+    # call.  Calling asyncio.run() per-ticker destroyed the event loop after
+    # each write; the Firestore AsyncClient's gRPC channel is bound to the
+    # first loop and raises "Event loop is closed" for every subsequent write,
+    # leaving only one document in the signals collection.
+    writes: list[tuple[str, dict]] = []
     success = 0
     errors = 0
     for symbol in tickers:
@@ -147,18 +153,22 @@ def main() -> None:
                     "dry_run — skipping write for %s (doc_id=%s)", symbol, doc_id
                 )
             else:
-                asyncio.run(dao.set(SIGNALS, doc_id, payload))
-                logger.info(
-                    "wrote signals/%s for ticker=%s month_id=%s",
-                    doc_id,
-                    symbol,
-                    month_id,
-                )
+                writes.append((doc_id, payload))
 
             success += 1
         except Exception:
-            logger.exception("failed to fetch/write signals for %s", symbol)
+            logger.exception("failed to fetch signals for %s", symbol)
             errors += 1
+
+    if writes:
+        async def _write_all() -> None:
+            await asyncio.gather(
+                *[dao.set(SIGNALS, doc_id, payload) for doc_id, payload in writes]
+            )
+            for doc_id, _ in writes:
+                logger.info("wrote signals/%s month_id=%s", doc_id, month_id)
+
+        asyncio.run(_write_all())
 
     logger.info(
         "financial_update_job complete — success=%d errors=%d month_id=%s",

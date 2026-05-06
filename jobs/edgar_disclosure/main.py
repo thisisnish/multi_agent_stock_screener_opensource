@@ -23,6 +23,7 @@ import logging
 import os
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
@@ -53,7 +54,7 @@ def _download_configs_from_gcs(bucket_name: str) -> tuple[str, str]:
 
 
 async def _run_indexing(
-    retriever, tickers: list[str], dry_run: bool
+    retriever, tickers: list[str], dry_run: bool, dao, month_id: str
 ) -> tuple[int, int]:
     """Await ``retriever.index_ticker`` for each ticker inside a single event loop.
 
@@ -70,10 +71,26 @@ async def _run_indexing(
         retriever: Initialised :class:`~screener.edgar.retriever.EDGARRetriever`.
         tickers: Ordered list of upper-case ticker symbols.
         dry_run: Forwarded verbatim to :meth:`~EDGARRetriever.index_ticker`.
+        dao: StorageDAO instance for event emission.
+        month_id: Current pipeline month string, e.g. ``"2026-05"``.
 
     Returns:
         ``(success_count, error_count)`` tuple.
     """
+    from screener.events.writer import emit_event
+
+    t0 = time.monotonic()
+
+    await emit_event(
+        dao,
+        event_type="job_started",
+        job_name="edgar_disclosure_job",
+        step="edgar_indexing",
+        status="started",
+        month_id=month_id,
+        payload={"ticker_count": len(tickers)},
+    )
+
     success = 0
     errors = 0
     for symbol in tickers:
@@ -83,6 +100,18 @@ async def _run_indexing(
         except Exception:
             logger.exception("failed to index EDGAR for %s", symbol)
             errors += 1
+
+    await emit_event(
+        dao,
+        event_type="job_complete",
+        job_name="edgar_disclosure_job",
+        step="edgar_indexing",
+        status="success" if errors == 0 else "error",
+        month_id=month_id,
+        duration_ms=int((time.monotonic() - t0) * 1000),
+        payload={"success": success, "errors": errors},
+    )
+
     return success, errors
 
 
@@ -136,7 +165,9 @@ def main() -> None:
         )
         return
 
-    success, errors = asyncio.run(_run_indexing(retriever, tickers, dry_run))
+    success, errors = asyncio.run(
+        _run_indexing(retriever, tickers, dry_run, dao, month_id)
+    )
 
     logger.info(
         "edgar_disclosure_job complete — success=%d errors=%d month_id=%s",

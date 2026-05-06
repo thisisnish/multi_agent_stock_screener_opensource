@@ -482,9 +482,9 @@ class TestTickerWriteNonDryRun:
         )
 
     def test_total_set_calls_includes_tickers_and_picks(self):
-        """Two tickers + one screenings + two analysis + two pick ledger entries + two perf ledger entries + one perf snapshot = 10."""
+        """Two tickers + one screenings + two analysis + two pick ledger entries + two perf ledger entries + one perf snapshot + five events = 15."""
         mock_dao = _run_main({"MONTH_ID": "2026-05", "DRY_RUN": "false"})
-        assert mock_dao.set.call_count == 10
+        assert mock_dao.set.call_count == 15
 
 
 class TestTickerWriteDryRun:

@@ -22,6 +22,7 @@ import logging
 import os
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
@@ -282,6 +283,21 @@ def main() -> None:
         logger.info("tickers/ collection updated — %d docs", len(scored_entries))
 
     async def _run_pipeline() -> list[dict]:
+        from screener.events.writer import emit_event
+
+        t0 = time.monotonic()
+
+        if not dry_run:
+            await emit_event(
+                dao,
+                event_type="job_started",
+                job_name="screener_job",
+                step="start",
+                status="started",
+                month_id=month_id,
+                payload={"ticker_count": len(gated), "pick_count": len(picks)},
+            )
+
         # Write tickers/ master collection for all scored tickers before debate.
         # Done unconditionally of dry_run so even dry runs populate the
         # collection snapshot — callers can inspect without triggering debate.
@@ -300,6 +316,18 @@ def main() -> None:
                 picks=picks,
                 factor_scores=factor_scores,
                 top_n=top_n,
+            )
+
+        if not dry_run:
+            await emit_event(
+                dao,
+                event_type="scoring_complete",
+                job_name="screener_job",
+                step="scoring",
+                status="success",
+                month_id=month_id,
+                duration_ms=int((time.monotonic() - t0) * 1000),
+                payload={"ticker_count": len(gated), "pick_count": len(picks)},
             )
 
         # Fetch prior-month eval_context once before the debate loop.
@@ -378,6 +406,18 @@ def main() -> None:
         logger.info("debate complete — %d verdicts", len(results))
 
         if not dry_run:
+            await emit_event(
+                dao,
+                event_type="debate_complete",
+                job_name="screener_job",
+                step="debate",
+                status="success",
+                month_id=month_id,
+                duration_ms=int((time.monotonic() - t0) * 1000),
+                payload={"verdict_count": len(results)},
+            )
+
+        if not dry_run:
             from screener.lib.storage.schema import (
                 PICKS,
                 pick_ledger_doc_id,
@@ -406,6 +446,17 @@ def main() -> None:
                 )
             logger.info("picks written to storage")
 
+            await emit_event(
+                dao,
+                event_type="picks_written",
+                job_name="screener_job",
+                step="picks_write",
+                status="success",
+                month_id=month_id,
+                duration_ms=int((time.monotonic() - t0) * 1000),
+                payload={"pick_count": len(results)},
+            )
+
             # Write performance/ collection: per-pick ledger entries + monthly
             # snapshot aggregate.  Done after picks/ so performance docs are
             # always a strict superset of pick data.
@@ -417,6 +468,18 @@ def main() -> None:
                 verdicts=results,
                 picks=picks,
                 source="judge",
+            )
+
+        if not dry_run:
+            await emit_event(
+                dao,
+                event_type="job_complete",
+                job_name="screener_job",
+                step="end",
+                status="success",
+                month_id=month_id,
+                duration_ms=int((time.monotonic() - t0) * 1000),
+                payload={"verdict_count": len(results)},
             )
 
         return results

@@ -807,6 +807,6 @@ class TestPerformanceWriteOrdering:
         )
 
     def test_total_set_calls_includes_tickers_picks_performance(self):
-        """2 tickers + 1 screenings + 2 analysis + 2 picks + 2 perf ledgers + 1 perf snapshot = 10 total."""
+        """2 tickers + 1 screenings + 2 analysis + 2 picks + 2 perf ledgers + 1 perf snapshot + 5 events = 15 total."""
         mock_dao = _run_main({"MONTH_ID": "2026-05", "DRY_RUN": "false"})
-        assert mock_dao.set.call_count == 10
+        assert mock_dao.set.call_count == 15

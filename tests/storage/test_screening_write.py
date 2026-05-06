@@ -1110,10 +1110,10 @@ class TestScreeningWriteNonDryRun:
     def test_total_set_calls_includes_screenings(self):
         """
         Expected writes: 2 tickers + 1 screenings + 2 analysis + 2 picks
-                         + 2 perf ledger + 1 perf snapshot = 10.
+                         + 2 perf ledger + 1 perf snapshot + 5 events = 15.
         """
         mock_dao = _run_main({"MONTH_ID": "2026-05", "DRY_RUN": "false"})
-        assert mock_dao.set.call_count == 10
+        assert mock_dao.set.call_count == 15
 
 
 class TestScreeningWriteDryRun:

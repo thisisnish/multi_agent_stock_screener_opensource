@@ -194,7 +194,8 @@ def main() -> None:
             payload={"success": success, "errors": errors},
         )
 
-    asyncio.run(_write_all())
+    if writes:
+        asyncio.run(_write_all())
 
     logger.info(
         "financial_update_job complete — success=%d errors=%d month_id=%s",

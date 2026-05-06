@@ -414,20 +414,25 @@ class TestFinancialUpdateMainWrites:
     """Verify that main() calls dao.set() once per ticker in normal (non-dry) mode."""
 
     def test_set_called_twice_for_two_tickers(self):
+        from screener.lib.storage.schema import SIGNALS
+
         mock_dao = _run_main({"MONTH_ID": "2026-04", "DRY_RUN": "false"})
-        assert mock_dao.set.call_count == 2
+        signal_calls = [c for c in mock_dao.set.call_args_list if c[0][0] == SIGNALS]
+        assert len(signal_calls) == 2
 
     def test_set_called_with_signals_collection(self):
         from screener.lib.storage.schema import SIGNALS
 
         mock_dao = _run_main({"MONTH_ID": "2026-04", "DRY_RUN": "false"})
-        for call_args in mock_dao.set.call_args_list:
-            collection = call_args[0][0]
-            assert collection == SIGNALS
+        signal_calls = [c for c in mock_dao.set.call_args_list if c[0][0] == SIGNALS]
+        assert len(signal_calls) == 2
 
     def test_set_doc_ids_match_ticker_month(self):
+        from screener.lib.storage.schema import SIGNALS
+
         mock_dao = _run_main({"MONTH_ID": "2026-04", "DRY_RUN": "false"})
-        doc_ids = {call[0][1] for call in mock_dao.set.call_args_list}
+        signal_calls = [c for c in mock_dao.set.call_args_list if c[0][0] == SIGNALS]
+        doc_ids = {call[0][1] for call in signal_calls}
         assert doc_ids == {"AAPL_2026-04", "MSFT_2026-04"}
 
     def test_payload_contains_earnings_yield(self):

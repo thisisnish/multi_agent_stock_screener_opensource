@@ -45,7 +45,9 @@ from screener.agents.state import DebateState
 from screener.edgar.retriever import get_disclosure_chunks_async
 from screener.lib.agent_creator import get_structured_llm
 from screener.lib.models import BearCaseOutput, BullCaseOutput, JudgeOutput
+from screener.agents.adaptive_weights import compute_adaptive_weights, default_weights
 from screener.lib.storage.schema import memory_collection_path, memory_doc_id
+from screener.agents.prompts import SCORING_MIN_SAMPLE
 from screener.metrics.confidence_scorer import score_judge_confidence
 from screener.metrics.conviction_scorer import score_conviction
 
@@ -113,6 +115,22 @@ def make_memory_read_node(dao: "StorageDAO"):
             )
             if sorted_docs:
                 scoring_weights = sorted_docs[0].get("scoring_weights")
+
+        # Compute adaptive weights from scored prior verdicts.  Falls back to
+        # stored weights (or defaults) when fewer than SCORING_MIN_SAMPLE
+        # scored months exist.
+        adaptive = compute_adaptive_weights(prior_months)
+        if adaptive is not None:
+            scoring_weights = adaptive
+            logger.debug(
+                "adaptive weights applied for ticker=%s: bull=%.2f bear=%.2f (n=%d)",
+                ticker,
+                adaptive["bull_weight"],
+                adaptive["bear_weight"],
+                adaptive["sample_size"],
+            )
+        elif scoring_weights is None:
+            scoring_weights = default_weights()
 
         logger.debug(
             "Loaded memory for ticker=%s: %d prior months", ticker, len(prior_months)
@@ -276,16 +294,40 @@ def conviction_node(state: DebateState) -> dict:
     Pure function — no I/O, no LLM calls. Scores are derived entirely from
     the structure and content of Bull/Bear outputs.
 
+    When adaptive weights are available (sample_size >= SCORING_MIN_SAMPLE),
+    raw scores are scaled by (weight / 0.5) to reflect historical accuracy.
+
     Args:
         state: Current DebateState.
 
     Returns:
         Partial state update with bull_conviction and bear_conviction.
     """
-    bull_conv = score_conviction(state["bull_output"], "bull")
-    bear_conv = score_conviction(state["bear_output"], "bear")
+    raw_bull = score_conviction(state["bull_output"], "bull")
+    raw_bear = score_conviction(state["bear_output"], "bear")
 
-    logger.debug("Conviction scores: bull=%.1f bear=%.1f", bull_conv, bear_conv)
+    scoring_weights = state.get("scoring_weights") or {}
+    sample_size = scoring_weights.get("sample_size", 0)
+
+    if sample_size >= SCORING_MIN_SAMPLE:
+        bull_w = scoring_weights.get("bull_weight", 0.5)
+        bear_w = scoring_weights.get("bear_weight", 0.5)
+        bull_conv = min(100.0, raw_bull * (bull_w / 0.5))
+        bear_conv = min(100.0, raw_bear * (bear_w / 0.5))
+        logger.debug(
+            "Conviction (adaptive): bull=%.1f→%.1f bear=%.1f→%.1f (bull_w=%.2f bear_w=%.2f n=%d)",
+            raw_bull,
+            bull_conv,
+            raw_bear,
+            bear_conv,
+            bull_w,
+            bear_w,
+            sample_size,
+        )
+    else:
+        bull_conv = raw_bull
+        bear_conv = raw_bear
+        logger.debug("Conviction scores: bull=%.1f bear=%.1f", bull_conv, bear_conv)
 
     return {"bull_conviction": bull_conv, "bear_conviction": bear_conv}
 
@@ -457,7 +499,6 @@ def make_memory_write_node(dao: "StorageDAO"):
     async def memory_write(state: DebateState) -> dict:
         ticker = state["ticker"]
         month_id = state["month_id"]
-        existing_doc: dict = dict(state.get("memory_doc") or {})
 
         verdict = {
             "action": state["final_action"],
@@ -471,10 +512,7 @@ def make_memory_write_node(dao: "StorageDAO"):
         new_doc = {
             "ticker": ticker,
             "month_id": month_id,
-            "scoring_weights": existing_doc.get(
-                "scoring_weights",
-                {"bull_weight": 0.5, "bear_weight": 0.5, "sample_size": 0},
-            ),
+            "scoring_weights": state.get("scoring_weights") or default_weights(),
             "verdict": verdict,
         }
 

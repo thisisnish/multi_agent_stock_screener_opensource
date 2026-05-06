@@ -103,6 +103,7 @@ def main() -> None:
     from screener.metrics.fcf_yield import fetch_fcf_yield
     from screener.metrics.ma200_gate import apply_gate
     from screener.metrics.technical import fetch_technical_signal
+    from screener.scoring.engine import apply_sector_cap, compute_composite_scores
 
     # Step 1 — fetch signals
     raw_signals: list[dict] = []
@@ -188,47 +189,15 @@ def main() -> None:
         "ebitda": weights.ebitda,
     }
 
-    gated: list[dict] = []
-    for sym, sig in signals_by_symbol.items():
-        weighted_sum = 0.0
-        total_weight = 0.0
-        for factor, factor_weight in factor_weights.items():
-            score = factor_scores[factor].get(sym)
-            if score is not None:
-                weighted_sum += score * factor_weight
-                total_weight += factor_weight
-
-        if total_weight == 0.0:
-            # All factors skipped — cannot score this symbol
-            continue
-
-        raw_composite = (
-            weighted_sum / total_weight if total_weight < 1.0 else weighted_sum
-        )
-
-        gate = apply_gate(
-            sig.get("technical", {}).get("price", 0) or 0,
-            sig.get("technical", {}).get("ma200", 0) or 0,
-        )
-        composite_score = raw_composite * gate["multiplier"]
-
-        gated.append({**sig, "composite_score": composite_score, "ma200_gate": gate})
+    gated: list[dict] = compute_composite_scores(
+        signals_by_symbol, factor_scores, factor_weights, apply_gate
+    )
 
     # Step 3 — top-N with sector cap
     top_n: int = app_config.screener.top_n
     max_per_sector: int = app_config.screener.max_picks_per_sector
 
-    sorted_by_score = sorted(gated, key=lambda x: x["composite_score"], reverse=True)
-    sector_counts: dict[str, int] = {}
-    picks: list[dict] = []
-    for entry in sorted_by_score:
-        sector = entry.get("sector", "Unknown")
-        if sector_counts.get(sector, 0) >= max_per_sector:
-            continue
-        picks.append(entry)
-        sector_counts[sector] = sector_counts.get(sector, 0) + 1
-        if len(picks) >= top_n:
-            break
+    picks: list[dict] = apply_sector_cap(gated, top_n, max_per_sector)
 
     logger.info("selected top %d tickers for debate", len(picks))
 

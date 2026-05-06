@@ -15,7 +15,7 @@
 #
 # Usage:
 #   export GCP_PROJECT_ID=my-gcp-project
-#   export GCP_REGION=us-central1          # optional, defaults to us-central1
+#   export GCP_REGION=us-west1             # optional, defaults to us-west1
 #   bash deploy/deploy_all.sh
 #
 # To deploy only the eval Cloud Function (skip all Docker builds):
@@ -34,7 +34,7 @@ fi
 # Configuration — override via environment variables
 # ---------------------------------------------------------------------------
 PROJECT_ID="${GCP_PROJECT_ID:?ERROR: GCP_PROJECT_ID is required}"
-REGION="${GCP_REGION:-us-central1}"
+REGION="${GCP_REGION:-us-west1}"
 ARTIFACT_REGISTRY_REPO="stock-screener"
 REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"

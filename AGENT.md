@@ -23,7 +23,7 @@ All three Cloud Run Jobs share a single Docker image per job (`docker/`). No Fla
 
 ---
 
-## Core Execution Loop (`screener/main.py:run_screener()`)
+## Core Execution Loop (`jobs/screener/main.py:main()`)
 
 ```
 1. Fetch signals for all tickers (technical, earnings, FCF, EBITDA)
@@ -48,18 +48,18 @@ memory_read → build_context → debate_node → conviction_node
 
 | Node | Type | Description |
 |------|------|-------------|
-| `memory_read` | sync | Read per-ticker verdict history; score prior pick if price moved |
-| `build_context` | sync | Assemble signal blocks + EDGAR disclosure block |
-| `debate_node` | LLM × 2 (parallel) | Bull + Bear run simultaneously via `RunnableParallel` |
-| `conviction_node` | white-box | Source diversity + hedge penalty score for Bull and Bear |
+| `memory_read` | async I/O | Read per-ticker verdict history; compute adaptive bull/bear weights from scored prior months |
+| `build_context` | async I/O | Vector-search EDGAR chunks and build disclosure block |
+| `debate_node` | LLM × 2 (parallel) | Bull + Bear run simultaneously via `asyncio.gather` |
+| `conviction_node` | white-box | Source diversity + hedge penalty score for Bull and Bear; scales by adaptive weights when ≥4 scored months |
 | `judge_node` | LLM × 1 | Adjudicates debate; declares BUY/SELL/HOLD + margin + decisive factor |
 | `confidence_node` | white-box | `W1·margin + W2·ln(sources) − W3·hedge` — no LLM tokens |
 | `hard_rules` | sync | Force HOLD if confidence < 40; set `contested_truth` if conviction gap > 30pts + NARROW/CONTESTED |
-| `memory_write` | sync | Persist verdict to `tickers/{SYMBOL}/memory/{MONTH_ID}` |
+| `memory_write` | async I/O | Persist verdict + scoring_weights to `tickers/{SYMBOL}/memory/{MONTH_ID}` |
 
 **Episodic memory**: Each ticker accumulates a scored verdict history. After ≥4 scored months, the debate adapts — Bull/Bear weights shift toward whichever side has been more accurate for this ticker.
 
-**Systemic memory (RAG)**: 10-K and 10-Q filings are chunked (512 tokens, 10% overlap), embedded (Gemini text-embedding-001, dim 3072), and injected into Bull + Bear context. Retrieval uses cosine similarity with ticker pre-filter, threshold 0.7.
+**Systemic memory (RAG)**: 10-K and 10-Q filings are chunked (512 tokens, 10% overlap), embedded (OpenAI text-embedding-3-large, dim 3072), and injected into Bull + Bear context. Retrieval uses cosine similarity with ticker pre-filter, threshold 0.7.
 
 **Eval feedback loop**: Monthly eval scores are written to `eval/{MONTH_ID}` and injected as `eval_context` into the Judge prompt the following month. The Judge receives its own historical accuracy, directional bias, and systematic issues.
 
@@ -77,7 +77,7 @@ llm:
   judge_model: null
   news_model: null
   narrator_model: "google_genai:gemini-2.0-flash"
-  embedder_model: "google_genai:models/gemini-embedding-001"
+  embedder_model: "openai:text-embedding-3-large"
 ```
 
 Supported providers: Anthropic, OpenAI, Gemini, Ollama (local), Groq, any LangChain-integrated provider. Structured outputs via `.with_structured_output(PydanticModel)`.
@@ -99,8 +99,7 @@ All collections live in one logical database: `multi-agent-stock-screener`.
 | Collection | Doc ID pattern | Purpose |
 |-----------|----------------|---------|
 | `tickers/{SYMBOL}` | `AAPL` | Master record |
-| `tickers/{SYMBOL}/memory/{MONTH_ID}` | `AAPL/memory/2026-04` | Episodic verdict history |
-| `tickers/{SYMBOL}/scoring_weights/current` | — | Adaptive bull/bear weights |
+| `tickers/{SYMBOL}/memory/{MONTH_ID}` | `AAPL/memory/2026-04` | Episodic verdict history + adaptive scoring_weights |
 | `screenings/{MONTH_ID}` | `2026-04` | Full scoring run output |
 | `analysis/{TICKER}_{MONTH_ID}` | `AAPL_2026-04` | Cached debate output |
 | `signals/{TICKER}_{MONTH_ID}` | `AAPL_2026-04` | Quarterly fundamentals |
@@ -141,7 +140,7 @@ Eval output feeds back into the Judge prompt next month as `eval_context`.
 
 ## Key Invariants
 
-- **Idempotent writes**: `write()` raises if doc exists. Skip logic prevents re-analysis of already-cached tickers.
+- **Idempotent writes**: All storage writes use `set()` (upsert). Re-analysis is prevented by an explicit existence check in screener_job before invoking the debate graph.
 - **Graceful degrade**: Signal failures → impute 50.0. EDGAR failure → empty disclosure block. News failure → skip analysis.
 - **Hard rule**: HOLD forced if Judge confidence < 40.
 - **Sector cap**: Max 3 picks per GICS sector in top N.

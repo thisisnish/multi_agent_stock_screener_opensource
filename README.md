@@ -39,19 +39,19 @@ Works with any LLM provider (Anthropic, OpenAI, Gemini, Ollama, Groq). Storage r
 ## Quick Start
 
 ```bash
-git clone https://github.com/your-org/multi-agent-stock-screener
-cd multi-agent-stock-screener
+git clone https://github.com/thisisnish/multi_agent_stock_screener_opensource
+cd multi_agent_stock_screener_opensource
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp config/.env.example .env
+cp .env.example .env
 ```
 
 Edit `.env` with your API keys (see [Secrets](#secrets) below), then edit `config/config.yaml` with your settings.
 
-Run a local dry-run:
+Run a local dry-run (no storage writes, no email):
 
 ```bash
-python jobs/screener/main.py --dry-run
+DRY_RUN=true python -m jobs.screener.main
 ```
 
 ---
@@ -80,26 +80,26 @@ llm:
   model: "anthropic:claude-haiku-4-5-20251001"   # default for all agents
   judge_model: "openai:gpt-4o"                   # use a stronger model just for Judge
   narrator_model: "google_genai:gemini-2.0-flash" # email narrative
-  embedder_model: "google_genai:models/gemini-embedding-001"  # EDGAR indexing
+  embedder_model: "openai:text-embedding-3-large"  # EDGAR indexing (3072-dim)
 ```
 
 ### Stock Universe
 
-The screener runs on whatever tickers are in `config/tickers.yaml`. The default is the S&P 500, organised by GICS sector:
+The screener runs on whatever tickers are in `config/tickers.yaml`. Each entry is a flat record with a `symbol` and a `sector` (GICS sector string):
 
 ```yaml
-Communication Services:
-  - META
-  - GOOGL
-  - NFLX
-
-Technology:
-  - AAPL
-  - MSFT
-  - NVDA
+tickers:
+  - symbol: AAPL
+    sector: Technology
+  - symbol: MSFT
+    sector: Technology
+  - symbol: JPM
+    sector: Financials
+  - symbol: META
+    sector: Communication Services
 ```
 
-To update the universe, edit this file and redeploy. The sector groupings enforce the max-3-per-sector cap in the top 10.
+The `sector` field drives the per-sector concentration cap (default: max 3 picks from any one sector in the top 10). To update the universe, edit this file and redeploy.
 
 ### Signal Weights
 
@@ -120,8 +120,8 @@ Weights must sum to 1.0.
 
 ```yaml
 screener:
-  top_n: 10             # Number of picks per run
-  max_sector_picks: 3   # Sector concentration cap
+  top_n: 10                  # Number of picks to pass to debate
+  max_picks_per_sector: 3    # Sector concentration cap
 ```
 
 ### Notifications
@@ -129,47 +129,51 @@ screener:
 ```yaml
 notifications:
   email:
+    enabled: true
+    from_address: "${EMAIL_FROM_ADDRESS:-}"   # Must be a verified Resend sender domain
     recipients:
-      - you@example.com
-    from: reports@yourdomain.com   # Must be a verified Resend sender
+      - "${EMAIL_TO_ADDRESS:-}"
+    subject_prefix: "[Stock Screener]"
 ```
+
+Set `EMAIL_FROM_ADDRESS` and `EMAIL_TO_ADDRESS` in `.env`. Set `enabled: false` to suppress all email (e.g. during local testing).
 
 ### Storage
 
 ```yaml
 storage:
   provider: firestore        # firestore | s3 | opensearch
-  database: multi-agent-stock-screener
 
-  # Firestore (GCP):
-  gcp_project: your-project-id
-  gcp_region: us-west1
+  firestore:
+    project_id: "${GCP_PROJECT_ID}"
+    database: "multi-agent-stock-screener"
 
-  # S3 (AWS):
-  s3_bucket: your-bucket-name
-  s3_prefix: multi-agent-stock-screener/
+  s3:
+    bucket: "${S3_BUCKET_NAME:-}"
+    region: "us-east-1"
 
-  # OpenSearch (self-hosted):
-  opensearch_host: https://localhost:9200
+  opensearch:
+    host: "${OPENSEARCH_HOST:-}"
+    port: 9200
+    index: "stock-screener-chunks"
 ```
 
 ### EDGAR (SEC Filings)
 
 ```yaml
 edgar:
-  enabled: true
-  forms: ["10-K", "10-Q"]
-  lookback_years: 2
-  freshness_days: 30    # Re-index a ticker if its filings are older than this
+  freshness_days: 30         # Re-index a ticker's filings if older than this
+  chunk_size: 512            # Tokens per chunk
+  chunk_overlap: 0.10        # 10% overlap between consecutive chunks
+  similarity_threshold: 0.7  # Minimum cosine similarity for retrieval
+  top_k: 5                   # Max chunks injected per debate
 ```
-
-Set `edgar.enabled: false` to skip SEC filing context entirely.
 
 ---
 
 ## Secrets
 
-Copy `config/.env.example` to `.env` and fill in the values you need:
+Copy `.env.example` to `.env` and fill in the values you need:
 
 ```bash
 # LLM — set the key for whichever provider you use
@@ -194,27 +198,27 @@ Secrets are never baked into the container image. On GCP, inject them via Secret
 
 **Single dry run (no storage writes, no email):**
 ```bash
-python jobs/screener/main.py --dry-run
+DRY_RUN=true python -m jobs.screener.main
 ```
 
 **Full local run (writes to storage, sends email):**
 ```bash
-python jobs/screener/main.py
+python -m jobs.screener.main
 ```
 
-**Monthly financial data refresh:**
+**Monthly financial data refresh only:**
 ```bash
-python jobs/financial_update/main.py
+DRY_RUN=true python -m jobs.financial_update.main
 ```
 
-**EDGAR indexing:**
+**EDGAR indexing only:**
 ```bash
-python jobs/edgar_disclosure/main.py
+DRY_RUN=true python -m jobs.edgar_disclosure.main
 ```
 
 **Tests:**
 ```bash
-pytest tests/ -v -n auto
+pytest tests/ -v
 ```
 
 ---
@@ -260,11 +264,6 @@ The screener does not auto-fetch the S&P 500 constituent list. To update:
 1. Edit `config/tickers.yaml` — add/remove tickers under the appropriate GICS sector heading
 2. Run `bash deploy/deploy_all.sh` to redeploy with the updated config
 
-To find the current S&P 500 constituents:
-```bash
-# Quick fetch via Wikipedia (verify against official sources before trading)
-python -c "import pandas as pd; print(pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]['Symbol'].tolist())"
-```
 
 ---
 

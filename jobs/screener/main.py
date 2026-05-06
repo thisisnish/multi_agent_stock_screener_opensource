@@ -467,6 +467,17 @@ def main() -> None:
                 source="judge",
             )
 
+        await emit_event(
+            dao,
+            event_type="job_complete",
+            job_name="screener_job",
+            step="end",
+            status="success",
+            month_id=month_id,
+            duration_ms=int((time.monotonic() - t0) * 1000),
+            payload={"verdict_count": len(results)},
+        )
+
         return results
 
     verdicts = asyncio.run(_run_pipeline())

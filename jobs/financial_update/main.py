@@ -161,6 +161,7 @@ def main() -> None:
             errors += 1
 
     if writes:
+
         async def _write_all() -> None:
             await asyncio.gather(
                 *[dao.set(SIGNALS, doc_id, payload) for doc_id, payload in writes]

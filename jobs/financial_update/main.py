@@ -19,6 +19,7 @@ import logging
 import os
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
@@ -160,16 +161,40 @@ def main() -> None:
             logger.exception("failed to fetch signals for %s", symbol)
             errors += 1
 
-    if writes:
+    async def _write_all() -> None:
+        from screener.events.writer import emit_event
 
-        async def _write_all() -> None:
+        t0 = time.monotonic()
+
+        await emit_event(
+            dao,
+            event_type="job_started",
+            job_name="financial_update_job",
+            step="signals_fetch",
+            status="started",
+            month_id=month_id,
+            payload={"ticker_count": len(tickers)},
+        )
+
+        if writes:
             await asyncio.gather(
                 *[dao.set(SIGNALS, doc_id, payload) for doc_id, payload in writes]
             )
             for doc_id, _ in writes:
                 logger.info("wrote signals/%s month_id=%s", doc_id, month_id)
 
-        asyncio.run(_write_all())
+        await emit_event(
+            dao,
+            event_type="job_complete",
+            job_name="financial_update_job",
+            step="signals_fetch",
+            status="success" if errors == 0 else "error",
+            month_id=month_id,
+            duration_ms=int((time.monotonic() - t0) * 1000),
+            payload={"success": success, "errors": errors},
+        )
+
+    asyncio.run(_write_all())
 
     logger.info(
         "financial_update_job complete — success=%d errors=%d month_id=%s",

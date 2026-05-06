@@ -251,6 +251,20 @@ def screening_run_doc_id(month_id: str) -> str:
     return month_id
 
 
+def event_doc_id() -> str:
+    """Doc ID for a pipeline lifecycle event in the ``events`` collection.
+
+    Returns a unique ``event_{hex}`` string so multiple events can coexist
+    in the collection without ID collisions.
+
+    Returns:
+        e.g. ``"event_3f7a2b9c1d4e..."``
+    """
+    import uuid
+
+    return f"event_{uuid.uuid4().hex}"
+
+
 def analysis_doc_id(ticker: str, month_id: str) -> str:
     """Doc ID for a monthly analysis document.
 
@@ -472,10 +486,23 @@ class EvalDoc(BaseModel):
 
 
 class EventDoc(BaseModel):
-    """Schema for a pipeline lifecycle event in the ``events`` collection."""
+    """Schema for a pipeline lifecycle event in the ``events`` collection.
+
+    One document per checkpoint; doc ID is ``event_{uuid4().hex}`` so events
+    are append-only and queryable by ``job_name``, ``step``, or ``status``.
+
+    Doc ID: ``event_{hex}`` (e.g. ``"event_3f7a2b9c..."``)
+    Firestore path: ``events/event_3f7a2b9c...``
+    """
 
     event_type: str
+    job_name: str
+    step: str
+    status: str
+    month_id: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    duration_ms: Optional[int] = None
+    error: Optional[str] = None
     payload: dict = Field(default_factory=dict)
 
 

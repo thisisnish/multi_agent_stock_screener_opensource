@@ -95,7 +95,7 @@ def retry_transient(
                 raise
             last_exc = exc
             if attempt < max_attempts - 1:
-                delay = backoff_base ** attempt
+                delay = backoff_base**attempt
                 logger.warning(
                     "retrying %s attempt %d/%d after %.1fs (error: %s)",
                     getattr(fn, "__name__", str(fn)),

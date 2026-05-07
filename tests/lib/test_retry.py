@@ -27,8 +27,8 @@ def test_retries_on_transient_then_succeeds():
     assert result == "ok"
     assert fn.call_count == 3
     assert mock_sleep.call_count == 2
-    mock_sleep.assert_any_call(1.0)   # backoff_base ** 0
-    mock_sleep.assert_any_call(2.0)   # backoff_base ** 1
+    mock_sleep.assert_any_call(1.0)  # backoff_base ** 0
+    mock_sleep.assert_any_call(2.0)  # backoff_base ** 1
 
 
 def test_fails_fast_on_validation_error():

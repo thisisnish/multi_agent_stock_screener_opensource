@@ -145,9 +145,24 @@ def main() -> None:
     errors = 0
     for symbol in tickers:
         try:
-            earnings = retry_transient(fetch_earnings_yield, [symbol], max_attempts=max_retries, backoff_base=backoff_base).get(symbol, {})
-            fcf = retry_transient(fetch_fcf_yield, [symbol], max_attempts=max_retries, backoff_base=backoff_base).get(symbol, {})
-            ebitda = retry_transient(fetch_ebitda_ev, [symbol], max_attempts=max_retries, backoff_base=backoff_base).get(symbol, {})
+            earnings = retry_transient(
+                fetch_earnings_yield,
+                [symbol],
+                max_attempts=max_retries,
+                backoff_base=backoff_base,
+            ).get(symbol, {})
+            fcf = retry_transient(
+                fetch_fcf_yield,
+                [symbol],
+                max_attempts=max_retries,
+                backoff_base=backoff_base,
+            ).get(symbol, {})
+            ebitda = retry_transient(
+                fetch_ebitda_ev,
+                [symbol],
+                max_attempts=max_retries,
+                backoff_base=backoff_base,
+            ).get(symbol, {})
 
             payload = _build_signal_payload(symbol, month_id, earnings, fcf, ebitda)
             doc_id = signal_doc_id(symbol, month_id)

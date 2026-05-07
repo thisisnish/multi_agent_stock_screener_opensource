@@ -97,7 +97,9 @@ def _is_transient_async(exc: BaseException) -> bool:
     return False
 
 
-async def _retry_async(coro_fn, *args, max_attempts: int, backoff_base: float, **kwargs):
+async def _retry_async(
+    coro_fn, *args, max_attempts: int, backoff_base: float, **kwargs
+):
     """Async equivalent of retry_transient — uses asyncio.sleep instead of time.sleep."""
     last_exc: BaseException | None = None
     for attempt in range(max_attempts):
@@ -110,7 +112,7 @@ async def _retry_async(coro_fn, *args, max_attempts: int, backoff_base: float, *
                 raise
             last_exc = exc
             if attempt < max_attempts - 1:
-                delay = backoff_base ** attempt
+                delay = backoff_base**attempt
                 logger.warning(
                     "retrying %s attempt %d/%d after %.1fs (error: %s)",
                     getattr(coro_fn, "__name__", str(coro_fn)),
@@ -250,7 +252,9 @@ def main() -> None:
         return
 
     success, errors = asyncio.run(
-        _run_indexing(retriever, tickers, dry_run, dao, month_id, max_retries, backoff_base)
+        _run_indexing(
+            retriever, tickers, dry_run, dao, month_id, max_retries, backoff_base
+        )
     )
 
     logger.info(

@@ -114,10 +114,30 @@ def main() -> None:
         symbol = entry["symbol"]
         sector = entry.get("sector", "Unknown")
         try:
-            technical = retry_transient(fetch_technical_signal, symbol, max_attempts=max_retries, backoff_base=backoff_base)
-            earnings = retry_transient(fetch_earnings_yield, [symbol], max_attempts=max_retries, backoff_base=backoff_base).get(symbol, {})
-            fcf = retry_transient(fetch_fcf_yield, [symbol], max_attempts=max_retries, backoff_base=backoff_base).get(symbol, {})
-            ebitda = retry_transient(fetch_ebitda_ev, [symbol], max_attempts=max_retries, backoff_base=backoff_base).get(symbol, {})
+            technical = retry_transient(
+                fetch_technical_signal,
+                symbol,
+                max_attempts=max_retries,
+                backoff_base=backoff_base,
+            )
+            earnings = retry_transient(
+                fetch_earnings_yield,
+                [symbol],
+                max_attempts=max_retries,
+                backoff_base=backoff_base,
+            ).get(symbol, {})
+            fcf = retry_transient(
+                fetch_fcf_yield,
+                [symbol],
+                max_attempts=max_retries,
+                backoff_base=backoff_base,
+            ).get(symbol, {})
+            ebitda = retry_transient(
+                fetch_ebitda_ev,
+                [symbol],
+                max_attempts=max_retries,
+                backoff_base=backoff_base,
+            ).get(symbol, {})
             raw_signals.append(
                 {
                     "symbol": symbol,

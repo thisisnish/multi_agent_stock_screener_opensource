@@ -30,7 +30,10 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # ---------------------------------------------------------------------------
 # Ensure project root is importable (mirrors conftest.py behaviour)
@@ -810,3 +813,260 @@ class TestPerformanceWriteOrdering:
         """2 tickers + 1 screenings + 2 analysis + 2 picks + 2 perf ledgers + 1 perf snapshot + 5 events = 15 total."""
         mock_dao = _run_main({"MONTH_ID": "2026-05", "DRY_RUN": "false"})
         assert mock_dao.set.call_count == 15
+
+
+# ---------------------------------------------------------------------------
+# P2-02b: Confidence tier tests
+# ---------------------------------------------------------------------------
+
+
+class TestConfidenceTier:
+    def test_score_70_is_high(self):
+        from screener.performance.tracker import _confidence_tier
+
+        assert _confidence_tier(70.0) == "High"
+
+    def test_score_100_is_high(self):
+        from screener.performance.tracker import _confidence_tier
+
+        assert _confidence_tier(100.0) == "High"
+
+    def test_score_69_is_med(self):
+        from screener.performance.tracker import _confidence_tier
+
+        assert _confidence_tier(69.9) == "Med"
+
+    def test_score_40_is_med(self):
+        from screener.performance.tracker import _confidence_tier
+
+        assert _confidence_tier(40.0) == "Med"
+
+    def test_score_39_is_low(self):
+        from screener.performance.tracker import _confidence_tier
+
+        assert _confidence_tier(39.9) == "Low"
+
+    def test_score_0_is_low(self):
+        from screener.performance.tracker import _confidence_tier
+
+        assert _confidence_tier(0.0) == "Low"
+
+    def test_score_none_returns_none(self):
+        from screener.performance.tracker import _confidence_tier
+
+        assert _confidence_tier(None) is None
+
+
+class TestBuildPickLedgerEntriesConfidence:
+    _PICKS = [
+        {"symbol": "AAPL", "price": 175.0},
+        {"symbol": "MSFT", "price": 420.0},
+        {"symbol": "NVDA", "price": 800.0},
+        {"symbol": "TSLA", "price": 200.0},
+    ]
+
+    def test_high_confidence_tier_tagged(self):
+        from screener.performance.tracker import build_pick_ledger_entries
+
+        entries = build_pick_ledger_entries(
+            verdicts=[
+                {"ticker": "AAPL", "final_action": "BUY", "confidence_score": 72.0}
+            ],
+            picks=self._PICKS,
+            month_id="2026-04",
+            entry_spy_price=520.0,
+        )
+        assert entries[0]["confidence_score"] == 72.0
+        assert entries[0]["confidence_tier"] == "High"
+
+    def test_med_confidence_tier_tagged(self):
+        from screener.performance.tracker import build_pick_ledger_entries
+
+        entries = build_pick_ledger_entries(
+            verdicts=[
+                {"ticker": "MSFT", "final_action": "BUY", "confidence_score": 55.0}
+            ],
+            picks=self._PICKS,
+            month_id="2026-04",
+            entry_spy_price=520.0,
+        )
+        assert entries[0]["confidence_score"] == 55.0
+        assert entries[0]["confidence_tier"] == "Med"
+
+    def test_low_confidence_tier_tagged(self):
+        from screener.performance.tracker import build_pick_ledger_entries
+
+        entries = build_pick_ledger_entries(
+            verdicts=[
+                {"ticker": "NVDA", "final_action": "BUY", "confidence_score": 30.0}
+            ],
+            picks=self._PICKS,
+            month_id="2026-04",
+            entry_spy_price=520.0,
+        )
+        assert entries[0]["confidence_score"] == 30.0
+        assert entries[0]["confidence_tier"] == "Low"
+
+    def test_missing_confidence_score_gives_none_tier(self):
+        from screener.performance.tracker import build_pick_ledger_entries
+
+        entries = build_pick_ledger_entries(
+            verdicts=[{"ticker": "TSLA", "final_action": "BUY"}],
+            picks=self._PICKS,
+            month_id="2026-04",
+            entry_spy_price=520.0,
+        )
+        assert entries[0]["confidence_score"] is None
+        assert entries[0]["confidence_tier"] is None
+
+    def test_multiple_verdicts_all_get_correct_tiers(self):
+        from screener.performance.tracker import build_pick_ledger_entries
+
+        verdicts = [
+            {"ticker": "AAPL", "final_action": "BUY", "confidence_score": 72.0},
+            {"ticker": "MSFT", "final_action": "BUY", "confidence_score": 55.0},
+            {"ticker": "NVDA", "final_action": "BUY", "confidence_score": 30.0},
+            {"ticker": "TSLA", "final_action": "BUY"},
+        ]
+        entries = build_pick_ledger_entries(
+            verdicts=verdicts,
+            picks=self._PICKS,
+            month_id="2026-04",
+            entry_spy_price=520.0,
+        )
+        by_ticker = {e["ticker"]: e for e in entries}
+        assert by_ticker["AAPL"]["confidence_tier"] == "High"
+        assert by_ticker["MSFT"]["confidence_tier"] == "Med"
+        assert by_ticker["NVDA"]["confidence_tier"] == "Low"
+        assert by_ticker["TSLA"]["confidence_tier"] is None
+
+
+class TestBuildPerformanceSnapshotTierCounts:
+    def _make_entry(self, tier: Optional[str], status: str = "active") -> dict:
+        return {"ticker": "X", "status": status, "confidence_tier": tier}
+
+    def test_high_tier_count_at_entry_time(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        entries = [
+            self._make_entry("High"),
+            self._make_entry("High"),
+            self._make_entry("Med"),
+        ]
+        snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
+        assert snap["high_tier_count"] == 2
+        assert snap["med_tier_count"] == 1
+        assert snap["low_tier_count"] is None
+
+    def test_all_tiers_present(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        entries = [
+            self._make_entry("High"),
+            self._make_entry("Med"),
+            self._make_entry("Low"),
+        ]
+        snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
+        assert snap["high_tier_count"] == 1
+        assert snap["med_tier_count"] == 1
+        assert snap["low_tier_count"] == 1
+
+    def test_tier_rates_none_at_entry_time(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        entries = [self._make_entry("High"), self._make_entry("Med")]
+        snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
+        assert snap["high_win_rate"] is None
+        assert snap["high_avg_return_pct"] is None
+        assert snap["high_avg_alpha_pct"] is None
+        assert snap["med_win_rate"] is None
+        assert snap["med_avg_return_pct"] is None
+        assert snap["med_avg_alpha_pct"] is None
+
+    def test_no_tier_entries_gives_none_counts(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        entries = [{"ticker": "X", "status": "active", "confidence_tier": None}]
+        snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
+        assert snap["high_tier_count"] is None
+        assert snap["med_tier_count"] is None
+        assert snap["low_tier_count"] is None
+
+
+class TestBuildPerformanceSnapshotTierStats:
+    def _make_closed_entry(
+        self,
+        tier: str,
+        pick_return_pct: float,
+        alpha_pct: float,
+        beat_spy: bool,
+    ) -> dict:
+        return {
+            "ticker": "X",
+            "status": "closed",
+            "confidence_tier": tier,
+            "pick_return_pct": pick_return_pct,
+            "alpha_pct": alpha_pct,
+            "beat_spy": beat_spy,
+        }
+
+    def test_high_win_rate_computed_from_closed(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        entries = [
+            self._make_closed_entry("High", 10.0, 5.0, True),
+            self._make_closed_entry("High", -3.0, -8.0, False),
+            self._make_closed_entry("High", 8.0, 3.0, True),
+        ]
+        snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
+        assert snap["high_win_rate"] == pytest.approx(2 / 3)
+
+    def test_high_avg_return_pct_computed(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        entries = [
+            self._make_closed_entry("High", 10.0, 5.0, True),
+            self._make_closed_entry("High", 20.0, 10.0, True),
+        ]
+        snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
+        assert snap["high_avg_return_pct"] == pytest.approx(15.0)
+
+    def test_high_avg_alpha_pct_computed(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        entries = [
+            self._make_closed_entry("High", 10.0, 4.0, True),
+            self._make_closed_entry("High", 6.0, 2.0, True),
+        ]
+        snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
+        assert snap["high_avg_alpha_pct"] == pytest.approx(3.0)
+
+    def test_med_and_low_stats_computed_independently(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        entries = [
+            self._make_closed_entry("Med", 5.0, 1.0, True),
+            self._make_closed_entry("Low", -2.0, -6.0, False),
+        ]
+        snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
+        assert snap["med_win_rate"] == pytest.approx(1.0)
+        assert snap["med_avg_return_pct"] == pytest.approx(5.0)
+        assert snap["low_win_rate"] == pytest.approx(0.0)
+        assert snap["low_avg_return_pct"] == pytest.approx(-2.0)
+
+    def test_mixed_active_and_closed_only_uses_closed_for_rates(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        entries = [
+            self._make_closed_entry("High", 12.0, 6.0, True),
+            {
+                "ticker": "Y",
+                "status": "active",
+                "confidence_tier": "High",
+                "pick_return_pct": None,
+            },
+        ]
+        snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
+        assert snap["high_tier_count"] == 2
+        assert snap["high_win_rate"] == pytest.approx(1.0)
+        assert snap["high_avg_return_pct"] == pytest.approx(12.0)

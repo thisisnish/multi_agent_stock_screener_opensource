@@ -434,6 +434,8 @@ class PickLedgerDoc(BaseModel):
     alpha_pct: Optional[float] = None
     beat_spy: Optional[bool] = None
     price_timestamp: Optional[str] = None
+    confidence_score: Optional[float] = None
+    confidence_tier: Optional[str] = None
 
 
 class PerformanceSnapshotDoc(BaseModel):
@@ -456,6 +458,18 @@ class PerformanceSnapshotDoc(BaseModel):
     avg_spy_return_pct: Optional[float] = None
     avg_alpha_pct: Optional[float] = None
     beats_spy_rate: Optional[float] = None
+    high_tier_count: Optional[int] = None
+    med_tier_count: Optional[int] = None
+    low_tier_count: Optional[int] = None
+    high_win_rate: Optional[float] = None
+    med_win_rate: Optional[float] = None
+    low_win_rate: Optional[float] = None
+    high_avg_return_pct: Optional[float] = None
+    med_avg_return_pct: Optional[float] = None
+    low_avg_return_pct: Optional[float] = None
+    high_avg_alpha_pct: Optional[float] = None
+    med_avg_alpha_pct: Optional[float] = None
+    low_avg_alpha_pct: Optional[float] = None
 
 
 class ChunkDoc(BaseModel):

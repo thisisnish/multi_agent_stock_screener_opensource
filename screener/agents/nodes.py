@@ -43,7 +43,12 @@ from screener.agents.prompts import (
 )
 from screener.agents.state import DebateState
 from screener.edgar.retriever import get_disclosure_chunks_async
-from screener.lib.agent_creator import get_structured_llm
+from screener.lib.agent_creator import (
+    ModelConfig,
+    _AGENT_OVERRIDE_ATTR,
+    get_structured_llm,
+)
+from screener.lib.llm_metrics import TokenAccumulator, emit_token_metric
 from screener.lib.models import BearCaseOutput, BullCaseOutput, JudgeOutput
 from screener.agents.adaptive_weights import compute_adaptive_weights, default_weights
 from screener.lib.storage.schema import memory_collection_path, memory_doc_id
@@ -56,6 +61,27 @@ if TYPE_CHECKING:
     from screener.lib.storage.base import StorageDAO
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_model_id(agent: str, app_config: "AppConfig") -> str:
+    """Return the bare model_id string for *agent* without instantiating an LLM.
+
+    Mirrors the resolution order in get_agent_llm(): per-agent override first,
+    then the global default. Returns an empty string on any parsing failure so
+    callers can still emit metrics with a degraded label rather than crashing.
+    """
+    try:
+        override_attr = _AGENT_OVERRIDE_ATTR.get(agent)
+        override_str: str | None = (
+            getattr(app_config.llm, override_attr) if override_attr else None
+        )
+        model_str = override_str if override_str is not None else app_config.llm.model
+        return ModelConfig.from_string(model_str).model_id
+    except Exception:
+        logger.warning(
+            "_resolve_model_id: could not resolve model_id for agent=%s", agent
+        )
+        return ""
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +267,7 @@ def make_debate_node(app_config: "AppConfig"):
         ticker_name = state.get("ticker_name", ticker)
         signals = state.get("signals", {})
         disclosure_block = state.get("disclosure_block")
+        project_id: str = app_config.storage.firestore.project_id
 
         context = build_ticker_context(
             ticker,
@@ -262,11 +289,19 @@ def make_debate_node(app_config: "AppConfig"):
             HumanMessage(content=context),
         ]
 
+        bull_acc = TokenAccumulator()
+        bear_acc = TokenAccumulator()
+
         bull_output, bear_output = await asyncio.gather(
-            bull_llm.ainvoke(bull_messages),
-            bear_llm.ainvoke(bear_messages),
+            bull_llm.with_config({"callbacks": [bull_acc]}).ainvoke(bull_messages),
+            bear_llm.with_config({"callbacks": [bear_acc]}).ainvoke(bear_messages),
         )
         outputs = {"bull": bull_output, "bear": bear_output}
+
+        model_id = _resolve_model_id("bull", app_config)
+        emit_token_metric(
+            project_id, model_id, bull_acc.total_tokens + bear_acc.total_tokens
+        )
 
         logger.debug(
             "Debate complete for ticker=%s: bull_citations=%s bear_citations=%s",
@@ -355,6 +390,7 @@ def make_judge_node(app_config: "AppConfig"):
         ticker_name = state.get("ticker_name", ticker)
         bull_output: BullCaseOutput = state["bull_output"]
         bear_output: BearCaseOutput = state["bear_output"]
+        project_id: str = app_config.storage.firestore.project_id
 
         judge_context = build_judge_context(
             ticker,
@@ -373,7 +409,13 @@ def make_judge_node(app_config: "AppConfig"):
             SystemMessage(content=JUDGE_SYSTEM_PROMPT),
             HumanMessage(content=judge_context),
         ]
-        judge_output: JudgeOutput = await judge_llm.ainvoke(messages)
+        judge_acc = TokenAccumulator()
+        judge_output: JudgeOutput = await judge_llm.with_config(
+            {"callbacks": [judge_acc]}
+        ).ainvoke(messages)
+
+        model_id = _resolve_model_id("judge", app_config)
+        emit_token_metric(project_id, model_id, judge_acc.total_tokens)
 
         # Enrich with conviction scores and citation lists (white-box data)
         judge_output.bull_conviction_score = state.get("bull_conviction")

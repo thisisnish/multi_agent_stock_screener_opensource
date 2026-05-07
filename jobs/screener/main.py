@@ -60,6 +60,8 @@ def main() -> None:
         "%Y-%m"
     )
     dry_run = os.environ.get("DRY_RUN", "false").lower() in ("1", "true", "yes")
+    max_retries = int(os.environ.get("MAX_RETRIES", "3"))
+    backoff_base = float(os.environ.get("BACKOFF_BASE_S", "2.0"))
 
     logger.info("screener_job starting — month_id=%s dry_run=%s", month_id, dry_run)
 
@@ -98,6 +100,7 @@ def main() -> None:
     from screener.agents.graph import build_debate_graph
     from screener.lib.email_sender import send_email
     from screener.lib.normalizer import sector_z_scores
+    from screener.lib.retry import retry_transient
     from screener.metrics.earnings_yield import fetch_earnings_yield
     from screener.metrics.ebitda_ev import fetch_ebitda_ev
     from screener.metrics.fcf_yield import fetch_fcf_yield
@@ -111,10 +114,30 @@ def main() -> None:
         symbol = entry["symbol"]
         sector = entry.get("sector", "Unknown")
         try:
-            technical = fetch_technical_signal(symbol)
-            earnings = fetch_earnings_yield([symbol]).get(symbol, {})
-            fcf = fetch_fcf_yield([symbol]).get(symbol, {})
-            ebitda = fetch_ebitda_ev([symbol]).get(symbol, {})
+            technical = retry_transient(
+                fetch_technical_signal,
+                symbol,
+                max_attempts=max_retries,
+                backoff_base=backoff_base,
+            )
+            earnings = retry_transient(
+                fetch_earnings_yield,
+                [symbol],
+                max_attempts=max_retries,
+                backoff_base=backoff_base,
+            ).get(symbol, {})
+            fcf = retry_transient(
+                fetch_fcf_yield,
+                [symbol],
+                max_attempts=max_retries,
+                backoff_base=backoff_base,
+            ).get(symbol, {})
+            ebitda = retry_transient(
+                fetch_ebitda_ev,
+                [symbol],
+                max_attempts=max_retries,
+                backoff_base=backoff_base,
+            ).get(symbol, {})
             raw_signals.append(
                 {
                     "symbol": symbol,

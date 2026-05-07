@@ -82,10 +82,41 @@ Both modules require:
 - Terraform >= 1.3
 - `hashicorp/google` provider >= 5.0
 - A GCP project with the Cloud Monitoring API enabled (`monitoring.googleapis.com`)
-- Credentials with `roles/monitoring.admin` (or equivalent) on the target project
 
-Enable the API if needed:
+### 1. Enable the Monitoring API
 
 ```bash
 gcloud services enable monitoring.googleapis.com --project=your-gcp-project-id
 ```
+
+### 2. Grant IAM permissions
+
+Your GCP identity needs `roles/monitoring.admin` to create notification channels, alert policies, and dashboards:
+
+```bash
+gcloud projects add-iam-policy-binding your-gcp-project-id \
+  --member="user:your-email@example.com" \
+  --role="roles/monitoring.admin"
+```
+
+If you prefer narrower roles, the minimum required per module is:
+
+| Module | Role |
+|---|---|
+| `alerts/` | `roles/monitoring.alertPolicyEditor` + `roles/monitoring.notificationChannelEditor` |
+| `dashboard/` | `roles/monitoring.dashboardsEditor` |
+
+### 3. Authenticate
+
+Use Application Default Credentials (ADC) for local runs:
+
+```bash
+gcloud auth application-default login
+```
+
+> **Important:** If `GOOGLE_APPLICATION_CREDENTIALS` is set in your environment (e.g. via a `.env` file), it takes priority over ADC. If it points to a non-existent file, Terraform will fail even after `gcloud auth application-default login`. Unset it before running Terraform:
+>
+> ```bash
+> unset GOOGLE_APPLICATION_CREDENTIALS
+> terraform plan
+> ```

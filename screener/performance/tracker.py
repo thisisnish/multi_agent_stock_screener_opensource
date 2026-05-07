@@ -31,6 +31,16 @@ logger = logging.getLogger(__name__)
 _SPY = "SPY"
 
 
+def _confidence_tier(score: Optional[float]) -> Optional[str]:
+    if score is None:
+        return None
+    if score >= 70:
+        return "High"
+    if score >= 40:
+        return "Med"
+    return "Low"
+
+
 def fetch_spy_price() -> Optional[float]:
     """Fetch the latest SPY closing price from yfinance.
 
@@ -97,6 +107,7 @@ def build_pick_ledger_entries(
     for verdict in verdicts:
         symbol = verdict.get("ticker", "UNKNOWN")
         entry_price = price_by_symbol.get(symbol)
+        conf_score: Optional[float] = verdict.get("confidence_score")
 
         doc = PickLedgerDoc(
             ticker=symbol,
@@ -106,6 +117,8 @@ def build_pick_ledger_entries(
             entry_spy_price=entry_spy_price,
             status="active",
             price_timestamp=now_iso,
+            confidence_score=conf_score,
+            confidence_tier=_confidence_tier(conf_score),
         )
 
         doc_id = pick_ledger_doc_id(symbol, month_id, source)
@@ -152,6 +165,38 @@ def build_performance_snapshot(
     active = sum(1 for e in ledger_entries if e.get("status") == "active")
     closed = total - active
 
+    # Group entries by confidence tier.
+    tier_entries: dict[str, list[dict]] = {"High": [], "Med": [], "Low": []}
+    for e in ledger_entries:
+        tier = e.get("confidence_tier")
+        if tier in tier_entries:
+            tier_entries[tier].append(e)
+
+    def _tier_stats(
+        entries: list[dict],
+    ) -> tuple[int, Optional[float], Optional[float], Optional[float]]:
+        count = len(entries)
+        if count == 0:
+            return 0, None, None, None
+        closed_entries = [
+            e for e in entries if e.get("pick_return_pct") is not None
+        ]
+        if not closed_entries:
+            return count, None, None, None
+        win_rate = sum(1 for e in closed_entries if e.get("beat_spy")) / len(
+            closed_entries
+        )
+        avg_return = sum(e["pick_return_pct"] for e in closed_entries) / len(
+            closed_entries
+        )
+        alphas = [e.get("alpha_pct") for e in closed_entries if e.get("alpha_pct") is not None]
+        avg_alpha = sum(alphas) / len(alphas) if alphas else None
+        return count, win_rate, avg_return, avg_alpha
+
+    h_count, h_win, h_ret, h_alpha = _tier_stats(tier_entries["High"])
+    m_count, m_win, m_ret, m_alpha = _tier_stats(tier_entries["Med"])
+    l_count, l_win, l_ret, l_alpha = _tier_stats(tier_entries["Low"])
+
     snapshot = PerformanceSnapshotDoc(
         month_id=month_id,
         source=source,
@@ -165,6 +210,18 @@ def build_performance_snapshot(
         avg_spy_return_pct=None,
         avg_alpha_pct=None,
         beats_spy_rate=None,
+        high_tier_count=h_count if h_count > 0 else None,
+        med_tier_count=m_count if m_count > 0 else None,
+        low_tier_count=l_count if l_count > 0 else None,
+        high_win_rate=h_win,
+        med_win_rate=m_win,
+        low_win_rate=l_win,
+        high_avg_return_pct=h_ret,
+        med_avg_return_pct=m_ret,
+        low_avg_return_pct=l_ret,
+        high_avg_alpha_pct=h_alpha,
+        med_avg_alpha_pct=m_alpha,
+        low_avg_alpha_pct=l_alpha,
     )
     return snapshot.model_dump(mode="json")
 

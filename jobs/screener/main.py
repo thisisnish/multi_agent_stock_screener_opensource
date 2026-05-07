@@ -239,7 +239,39 @@ def main() -> None:
     # Build today's date string for latest_screening_date field
     screening_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    graph = build_debate_graph(app_config=app_config, dao=dao)
+    # Load calibration weight overrides written by the monthly eval function.
+    # Non-blocking: if the doc is missing or the read fails, the run continues
+    # with default weights — degraded scoring is better than a failed job.
+    confidence_weights: dict | None = None
+    try:
+        from screener.lib.storage.schema import CALIBRATION, weight_override_doc_id
+
+        override_doc = asyncio.run(
+            dao.get(CALIBRATION, weight_override_doc_id("judge"))
+        )
+        if override_doc:
+            confidence_weights = {
+                "W1_margin": override_doc["W1_margin"],
+                "W2_unique_sources": override_doc["W2_unique_sources"],
+                "W3_hedge": override_doc["W3_hedge"],
+            }
+            logger.info(
+                "loaded confidence weight override — W1=%.4f W2=%.4f W3=%.4f reason=%s",
+                confidence_weights["W1_margin"],
+                confidence_weights["W2_unique_sources"],
+                confidence_weights["W3_hedge"],
+                override_doc.get("reason", ""),
+            )
+        else:
+            logger.debug("no confidence weight override found — using defaults")
+    except Exception:
+        logger.exception(
+            "failed to load confidence weight override — continuing with defaults"
+        )
+
+    graph = build_debate_graph(
+        app_config=app_config, dao=dao, confidence_weights=confidence_weights
+    )
 
     async def _write_ticker_docs(scored_entries: list[dict]) -> None:
         """Upsert one master record per ticker into tickers/ collection.

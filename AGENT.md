@@ -53,7 +53,7 @@ memory_read → build_context → debate_node → conviction_node
 | `debate_node` | LLM × 2 (parallel) | Bull + Bear run simultaneously via `asyncio.gather` |
 | `conviction_node` | white-box | Source diversity + hedge penalty score for Bull and Bear; scales by adaptive weights when ≥4 scored months |
 | `judge_node` | LLM × 1 | Adjudicates debate; declares BUY/SELL/HOLD + margin + decisive factor |
-| `confidence_node` | white-box | `W1·margin + W2·ln(sources) − W3·hedge` — no LLM tokens |
+| `confidence_node` | white-box | `W1·margin + W2·ln(sources) − W3·hedge` — no LLM tokens; weights loaded from `calibration/weights_judge` at startup if a calibration override exists |
 | `hard_rules` | sync | Force HOLD if confidence < 40; set `contested_truth` if conviction gap > 30pts + NARROW/CONTESTED |
 | `memory_write` | async I/O | Persist verdict + scoring_weights to `tickers/{SYMBOL}/memory/{MONTH_ID}` |
 
@@ -107,6 +107,8 @@ All collections live in one logical database: `multi-agent-stock-screener`.
 | `performance/{MONTH_ID}_{source}` | `2026-04_judge` | Win rate, alpha, bull/bear accuracy |
 | `chunks/{DOC_ID}` | sha256 hash | EDGAR vector chunks |
 | `eval/{MONTH_ID}` | `2026-04` | Monthly quality metrics + acid test |
+| `calibration/{Nm_source}` | `12m_judge` | Rolling N-month calibration report (High>Med>Low check) |
+| `calibration/weights_{source}` | `weights_judge` | Recommended confidence weight overrides; written when calibration drifts |
 | `events/{ID}` | uuid | Event log |
 
 ---
@@ -135,6 +137,8 @@ Runs monthly (Step 4). Scores prior month's picks on decision quality (0–100) 
 - Disclosure citation rate (% of analyses that cited SEC filings)
 
 Eval output feeds back into the Judge prompt next month as `eval_context`.
+
+**Rolling calibration tracker** — also runs after each eval. Reads the last 12 months of `PerformanceSnapshotDoc` records, aggregates per-tier alpha and win-rate, and checks that High > Med > Low holds by at least a 2pp gap. Results written to `calibration/12m_judge`. If the ordering is violated, recommended weight adjustments are written to `calibration/weights_judge` and picked up by `screener_job` on its next run.
 
 ---
 

@@ -90,6 +90,7 @@ def _build_signal_payload(
 
 def main() -> None:
     from screener.lib.config_loader import load_config
+    from screener.lib.retry import retry_transient
     from screener.lib.storage.firestore import FirestoreDAO
     from screener.lib.storage.schema import SIGNALS, signal_doc_id
     from screener.metrics.earnings_yield import fetch_earnings_yield
@@ -100,6 +101,8 @@ def main() -> None:
         "%Y-%m"
     )
     dry_run = os.environ.get("DRY_RUN", "false").lower() in ("1", "true", "yes")
+    max_retries = int(os.environ.get("MAX_RETRIES", "3"))
+    backoff_base = float(os.environ.get("BACKOFF_BASE_S", "2.0"))
 
     logger.info(
         "financial_update_job starting — month_id=%s dry_run=%s", month_id, dry_run
@@ -142,9 +145,9 @@ def main() -> None:
     errors = 0
     for symbol in tickers:
         try:
-            earnings = fetch_earnings_yield([symbol]).get(symbol, {})
-            fcf = fetch_fcf_yield([symbol]).get(symbol, {})
-            ebitda = fetch_ebitda_ev([symbol]).get(symbol, {})
+            earnings = retry_transient(fetch_earnings_yield, [symbol], max_attempts=max_retries, backoff_base=backoff_base).get(symbol, {})
+            fcf = retry_transient(fetch_fcf_yield, [symbol], max_attempts=max_retries, backoff_base=backoff_base).get(symbol, {})
+            ebitda = retry_transient(fetch_ebitda_ev, [symbol], max_attempts=max_retries, backoff_base=backoff_base).get(symbol, {})
 
             payload = _build_signal_payload(symbol, month_id, earnings, fcf, ebitda)
             doc_id = signal_doc_id(symbol, month_id)
@@ -204,8 +207,14 @@ def main() -> None:
         month_id,
     )
 
-    if errors > 0 and success == 0:
-        logger.error("all tickers failed — exiting non-zero")
+    max_failure_rate = float(os.environ.get("MAX_FAILURE_RATE", "0.5"))
+    total = success + errors
+    if total > 0 and (errors / total) > max_failure_rate:
+        logger.error(
+            "failure rate %.0f%% exceeds threshold %.0f%% — exiting non-zero",
+            errors / total * 100,
+            max_failure_rate * 100,
+        )
         sys.exit(1)
 
 

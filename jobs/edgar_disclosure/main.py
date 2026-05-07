@@ -19,6 +19,7 @@ All API keys are injected from Secret Manager (see deploy/deploy_all.sh).
 from __future__ import annotations
 
 import asyncio
+import errno
 import logging
 import os
 import sys
@@ -53,8 +54,83 @@ def _download_configs_from_gcs(bucket_name: str) -> tuple[str, str]:
     return config_path, tickers_path
 
 
+_VALIDATION_EXCEPTIONS = (ValueError, TypeError, KeyError, AttributeError)
+
+
+def _is_transient_async(exc: BaseException) -> bool:
+    """Mirror of screener.lib.retry._is_transient for use in the async retry loop."""
+    try:
+        import requests.exceptions as req_exc
+
+        if isinstance(exc, req_exc.Timeout):
+            return True
+        if isinstance(exc, req_exc.ConnectionError):
+            return True
+        if isinstance(exc, req_exc.HTTPError):
+            resp = getattr(exc, "response", None)
+            if resp is None:
+                return True
+            return resp.status_code == 429 or resp.status_code >= 500
+    except ImportError:
+        pass
+
+    try:
+        import httpx
+
+        if isinstance(exc, httpx.TimeoutException):
+            return True
+        if isinstance(exc, httpx.ConnectError):
+            return True
+    except ImportError:
+        pass
+
+    if isinstance(exc, TimeoutError):
+        return True
+    if isinstance(exc, ConnectionResetError):
+        return True
+
+    # OSError: only retry on network-level errno values (ETIMEDOUT / ECONNRESET).
+    if isinstance(exc, OSError):
+        err = getattr(exc, "errno", None)
+        return err in (errno.ETIMEDOUT, errno.ECONNRESET)
+
+    return False
+
+
+async def _retry_async(coro_fn, *args, max_attempts: int, backoff_base: float, **kwargs):
+    """Async equivalent of retry_transient — uses asyncio.sleep instead of time.sleep."""
+    last_exc: BaseException | None = None
+    for attempt in range(max_attempts):
+        try:
+            return await coro_fn(*args, **kwargs)
+        except _VALIDATION_EXCEPTIONS:
+            raise
+        except Exception as exc:
+            if not _is_transient_async(exc):
+                raise
+            last_exc = exc
+            if attempt < max_attempts - 1:
+                delay = backoff_base ** attempt
+                logger.warning(
+                    "retrying %s attempt %d/%d after %.1fs (error: %s)",
+                    getattr(coro_fn, "__name__", str(coro_fn)),
+                    attempt + 1,
+                    max_attempts,
+                    delay,
+                    exc,
+                )
+                await asyncio.sleep(delay)
+    raise last_exc  # type: ignore[misc]
+
+
 async def _run_indexing(
-    retriever, tickers: list[str], dry_run: bool, dao, month_id: str
+    retriever,
+    tickers: list[str],
+    dry_run: bool,
+    dao,
+    month_id: str,
+    max_retries: int = 3,
+    backoff_base: float = 2.0,
 ) -> tuple[int, int]:
     """Await ``retriever.index_ticker`` for each ticker inside a single event loop.
 
@@ -95,7 +171,13 @@ async def _run_indexing(
     errors = 0
     for symbol in tickers:
         try:
-            await retriever.index_ticker(symbol, dry_run=dry_run)
+            await _retry_async(
+                retriever.index_ticker,
+                symbol,
+                dry_run=dry_run,
+                max_attempts=max_retries,
+                backoff_base=backoff_base,
+            )
             success += 1
         except Exception:
             logger.exception("failed to index EDGAR for %s", symbol)
@@ -123,6 +205,8 @@ def main() -> None:
         "%Y-%m"
     )
     dry_run = os.environ.get("DRY_RUN", "false").lower() in ("1", "true", "yes")
+    max_retries = int(os.environ.get("MAX_RETRIES", "3"))
+    backoff_base = float(os.environ.get("BACKOFF_BASE_S", "2.0"))
 
     logger.info(
         "edgar_disclosure_job starting — month_id=%s dry_run=%s", month_id, dry_run
@@ -166,7 +250,7 @@ def main() -> None:
         return
 
     success, errors = asyncio.run(
-        _run_indexing(retriever, tickers, dry_run, dao, month_id)
+        _run_indexing(retriever, tickers, dry_run, dao, month_id, max_retries, backoff_base)
     )
 
     logger.info(
@@ -176,8 +260,14 @@ def main() -> None:
         month_id,
     )
 
-    if errors > 0 and success == 0:
-        logger.error("all tickers failed — exiting non-zero")
+    max_failure_rate = float(os.environ.get("MAX_FAILURE_RATE", "0.5"))
+    total = success + errors
+    if total > 0 and (errors / total) > max_failure_rate:
+        logger.error(
+            "failure rate %.0f%% exceeds threshold %.0f%% — exiting non-zero",
+            errors / total * 100,
+            max_failure_rate * 100,
+        )
         sys.exit(1)
 
 

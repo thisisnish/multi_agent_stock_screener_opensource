@@ -869,7 +869,9 @@ class TestBuildPickLedgerEntriesConfidence:
         from screener.performance.tracker import build_pick_ledger_entries
 
         entries = build_pick_ledger_entries(
-            verdicts=[{"ticker": "AAPL", "final_action": "BUY", "confidence_score": 72.0}],
+            verdicts=[
+                {"ticker": "AAPL", "final_action": "BUY", "confidence_score": 72.0}
+            ],
             picks=self._PICKS,
             month_id="2026-04",
             entry_spy_price=520.0,
@@ -881,7 +883,9 @@ class TestBuildPickLedgerEntriesConfidence:
         from screener.performance.tracker import build_pick_ledger_entries
 
         entries = build_pick_ledger_entries(
-            verdicts=[{"ticker": "MSFT", "final_action": "BUY", "confidence_score": 55.0}],
+            verdicts=[
+                {"ticker": "MSFT", "final_action": "BUY", "confidence_score": 55.0}
+            ],
             picks=self._PICKS,
             month_id="2026-04",
             entry_spy_price=520.0,
@@ -893,7 +897,9 @@ class TestBuildPickLedgerEntriesConfidence:
         from screener.performance.tracker import build_pick_ledger_entries
 
         entries = build_pick_ledger_entries(
-            verdicts=[{"ticker": "NVDA", "final_action": "BUY", "confidence_score": 30.0}],
+            verdicts=[
+                {"ticker": "NVDA", "final_action": "BUY", "confidence_score": 30.0}
+            ],
             picks=self._PICKS,
             month_id="2026-04",
             entry_spy_price=520.0,
@@ -1053,7 +1059,12 @@ class TestBuildPerformanceSnapshotTierStats:
 
         entries = [
             self._make_closed_entry("High", 12.0, 6.0, True),
-            {"ticker": "Y", "status": "active", "confidence_tier": "High", "pick_return_pct": None},
+            {
+                "ticker": "Y",
+                "status": "active",
+                "confidence_tier": "High",
+                "pick_return_pct": None,
+            },
         ]
         snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
         assert snap["high_tier_count"] == 2

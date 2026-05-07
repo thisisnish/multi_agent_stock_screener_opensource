@@ -178,9 +178,7 @@ def build_performance_snapshot(
         count = len(entries)
         if count == 0:
             return 0, None, None, None
-        closed_entries = [
-            e for e in entries if e.get("pick_return_pct") is not None
-        ]
+        closed_entries = [e for e in entries if e.get("pick_return_pct") is not None]
         if not closed_entries:
             return count, None, None, None
         win_rate = sum(1 for e in closed_entries if e.get("beat_spy")) / len(
@@ -189,7 +187,9 @@ def build_performance_snapshot(
         avg_return = sum(e["pick_return_pct"] for e in closed_entries) / len(
             closed_entries
         )
-        alphas = [e.get("alpha_pct") for e in closed_entries if e.get("alpha_pct") is not None]
+        alphas = [
+            e.get("alpha_pct") for e in closed_entries if e.get("alpha_pct") is not None
+        ]
         avg_alpha = sum(alphas) / len(alphas) if alphas else None
         return count, win_rate, avg_return, avg_alpha
 

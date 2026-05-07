@@ -19,10 +19,10 @@ from typing import TYPE_CHECKING
 from langgraph.graph import END, StateGraph  # type: ignore[import]
 
 from screener.agents.nodes import (
-    confidence_node,
     conviction_node,
     hard_rules,
     make_build_context_node,
+    make_confidence_node,
     make_debate_node,
     make_judge_node,
     make_memory_read_node,
@@ -35,12 +35,20 @@ if TYPE_CHECKING:
     from screener.lib.storage.base import StorageDAO
 
 
-def build_debate_graph(app_config: "AppConfig", dao: "StorageDAO"):
+def build_debate_graph(
+    app_config: "AppConfig",
+    dao: "StorageDAO",
+    confidence_weights: dict[str, float] | None = None,
+):
     """Build and compile the 8-node debate StateGraph.
 
     Args:
         app_config: Validated AppConfig — passed through to LLM node factories.
         dao: StorageDAO implementation — passed through to I/O node factories.
+        confidence_weights: Optional weight override dict for the confidence
+            scoring node.  When provided (loaded from a WeightOverrideDoc at
+            job startup), every ticker in the run uses the adjusted formula.
+            Defaults to None (standard weights).
 
     Returns:
         A compiled LangGraph graph ready for invocation.
@@ -52,7 +60,7 @@ def build_debate_graph(app_config: "AppConfig", dao: "StorageDAO"):
     graph.add_node("debate_node", make_debate_node(app_config))
     graph.add_node("conviction_node", conviction_node)
     graph.add_node("judge_node", make_judge_node(app_config))
-    graph.add_node("confidence_node", confidence_node)
+    graph.add_node("confidence_node", make_confidence_node(confidence_weights))
     graph.add_node("hard_rules", hard_rules)
     graph.add_node("memory_write", make_memory_write_node(dao))
 

@@ -209,6 +209,16 @@ async def _run_async(
     report = format_metrics_report(metrics)
     logger.debug("metrics report:\n%s", report)
 
+    calib_result: dict = {}
+    try:
+        from screener.calibration.tracker import run_calibration_tracking
+
+        calib_result = await run_calibration_tracking(dao, month_id, dry_run=dry_run)
+        logger.info("calibration tracking: %s", calib_result)
+    except Exception:
+        logger.exception("calibration tracking failed — continuing")
+        calib_result = {}
+
     return {
         "status": "success",
         "month_id": month_id,
@@ -217,6 +227,7 @@ async def _run_async(
         "overall_accuracy": metrics.overall_accuracy,
         "directional_bias": metrics.directional_bias,
         "systematic_issues": issues,
+        "calibration": calib_result,
     }
 
 

@@ -53,6 +53,7 @@ ANALYSIS: str = "analysis"
 CHUNKS: str = "chunks"
 EVAL: str = "eval"
 EVENTS: str = "events"
+CALIBRATION: str = "calibration"
 
 
 # ---------------------------------------------------------------------------
@@ -609,3 +610,67 @@ class AnalysisDoc(BaseModel):
     margin_of_victory: Optional[str] = None
     contested_truth: bool = False
     horizon: Optional[str] = None
+
+
+def calibration_report_doc_id(window_months: int, source: str = "judge") -> str:
+    """Doc ID for a rolling calibration report in the ``calibration`` collection.
+
+    Args:
+        window_months: Number of months in the rolling window, e.g. ``12``.
+        source: Agent source; defaults to ``"judge"``.
+
+    Returns:
+        e.g. ``"12m_judge"``
+    """
+    return f"{window_months}m_{source}"
+
+
+def weight_override_doc_id(source: str = "judge") -> str:
+    """Doc ID for a weight override document in the ``calibration`` collection.
+
+    Args:
+        source: Agent source; defaults to ``"judge"``.
+
+    Returns:
+        e.g. ``"weights_judge"``
+    """
+    return f"weights_{source}"
+
+
+class CalibrationReportDoc(BaseModel):
+    """Rolling calibration report across N months of PerformanceSnapshotDoc data.
+
+    Doc ID: ``{N}m_{source}`` (e.g. ``"12m_judge"``).
+    Firestore path: ``calibration/12m_judge``.
+    """
+
+    window_months: int
+    source: str = "judge"
+    computed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    months_included: list[str] = Field(default_factory=list)
+    high_avg_alpha_pct: Optional[float] = None
+    med_avg_alpha_pct: Optional[float] = None
+    low_avg_alpha_pct: Optional[float] = None
+    high_avg_return_pct: Optional[float] = None
+    med_avg_return_pct: Optional[float] = None
+    low_avg_return_pct: Optional[float] = None
+    high_win_rate: Optional[float] = None
+    med_win_rate: Optional[float] = None
+    low_win_rate: Optional[float] = None
+    calibration_ok: bool = True
+    drift_flags: list[str] = Field(default_factory=list)
+
+
+class WeightOverrideDoc(BaseModel):
+    """Recommended confidence weight overrides written by the calibration tracker.
+
+    Doc ID: ``weights_{source}`` (e.g. ``"weights_judge"``).
+    Firestore path: ``calibration/weights_judge``.
+    """
+
+    source: str = "judge"
+    computed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    W1_margin: float
+    W2_unique_sources: float
+    W3_hedge: float
+    reason: str

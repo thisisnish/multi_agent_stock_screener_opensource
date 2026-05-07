@@ -468,6 +468,45 @@ def confidence_node(state: DebateState) -> dict:
     return {"confidence_score": confidence_score, "contested_truth": contested_truth}
 
 
+def make_confidence_node(weights: dict[str, float] | None = None):
+    """Build a confidence_node that applies optional weight overrides.
+
+    When calibration drift is detected, the screener_job loads a
+    WeightOverrideDoc from Firestore and passes the weights here so every
+    ticker in the run uses the same adjusted scoring formula.
+
+    Falls back to ``confidence_node`` behaviour (default weights) when
+    ``weights`` is None.
+
+    Args:
+        weights: Optional dict overriding W1_margin, W2_unique_sources, W3_hedge.
+
+    Returns:
+        Node function compatible with LangGraph (sync, accepts DebateState).
+    """
+    if weights is None:
+        return confidence_node
+
+    def _confidence_node_with_weights(state: DebateState) -> dict:
+        confidence_score, contested_truth, _ = score_judge_confidence(
+            state["judge_output"],
+            weights=weights,
+            bull_conviction=state.get("bull_conviction"),
+            bear_conviction=state.get("bear_conviction"),
+        )
+        logger.debug(
+            "Confidence score=%.1f contested_truth=%s (weight_override=True)",
+            confidence_score,
+            contested_truth,
+        )
+        return {
+            "confidence_score": confidence_score,
+            "contested_truth": contested_truth,
+        }
+
+    return _confidence_node_with_weights
+
+
 # ---------------------------------------------------------------------------
 # hard_rules (pure sync)
 # ---------------------------------------------------------------------------

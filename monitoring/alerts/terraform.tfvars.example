@@ -1,0 +1,7 @@
+project_id    = "your-gcp-project-id"
+region        = "us-west1"
+alert_email   = "your-alert-email@example.com"
+max_retries   = 3
+job_names     = ["financial-update-job", "edgar-disclosure-job", "screener-job"]
+workflow_name = "stock-screener-monthly-pipeline"
+function_name = "eval-handler"

@@ -229,6 +229,7 @@ def make_build_context_node(dao: "StorageDAO", app_config: "AppConfig"):
             embedder,
             top_k=edgar_cfg.top_k,
             threshold=edgar_cfg.similarity_threshold,
+            query_templates=edgar_cfg.retrieval_query_templates,
         )
         disclosure_block = build_disclosure_block(chunks)
 

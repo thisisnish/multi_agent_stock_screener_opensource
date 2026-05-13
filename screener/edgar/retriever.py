@@ -46,41 +46,68 @@ async def get_disclosure_chunks_async(
     embedder,
     top_k: int = 5,
     threshold: float = 0.7,
+    query_templates: list[str] | None = None,
 ) -> list[dict]:
-    """Embed a generic SEC risk/performance query and retrieve matching chunks.
+    """Embed one or more queries and retrieve matching EDGAR chunks for a ticker.
 
-    Uses ``asyncio.to_thread`` so the synchronous embedder.embed_query call
-    does not block the event loop.
+    Each query template is embedded and searched independently. Results are
+    merged, deduplicated by chunk_index+period (keeping the highest score per
+    chunk), and returned sorted by descending similarity, capped at ``top_k``.
+
+    Uses ``asyncio.to_thread`` so synchronous embedder calls don't block the
+    event loop.
 
     Args:
         ticker: Upper-case ticker symbol, e.g. "AAPL".
         dao: StorageDAO implementation to query.
         embedder: LangChain Embeddings instance with an ``embed_query`` method.
-        top_k: Maximum number of chunks to return.
+        top_k: Maximum number of chunks to return across all queries.
         threshold: Minimum cosine similarity score (0.0–1.0). Chunks below this
             are dropped by the DAO's vector_search implementation.
+        query_templates: List of query string templates. ``{ticker}`` is replaced
+            with the ticker symbol before embedding. Defaults to the built-in
+            risk/performance query.
 
     Returns:
         List of up to ``top_k`` chunk dicts, ordered by descending similarity.
         Each dict may include a ``_score`` key. Returns empty list on error.
     """
-    query = f"SEC filing risk factors financial performance {ticker}"
+    if not query_templates:
+        query_templates = ["SEC filing risk factors financial performance {ticker}"]
+
+    seen: dict[str, dict] = {}  # dedup key → best chunk
     try:
-        embedding: list[float] = await asyncio.to_thread(embedder.embed_query, query)
-        chunks = await dao.vector_search(
-            CHUNKS,
-            embedding,
-            top_k=top_k,
-            threshold=threshold,
-            filters={"ticker": ticker.upper()},
-        )
+        for template in query_templates:
+            query = template.format(ticker=ticker)
+            embedding: list[float] = await asyncio.to_thread(
+                embedder.embed_query, query
+            )
+            results = await dao.vector_search(
+                CHUNKS,
+                embedding,
+                top_k=top_k,
+                threshold=threshold,
+                filters={"ticker": ticker.upper()},
+            )
+            for chunk in results:
+                # Deduplicate by (period, chunk_index); keep the higher-scoring hit
+                key = f"{chunk.get('period', '')}_{chunk.get('chunk_index', '')}"
+                if key not in seen or chunk.get("_score", 0) > seen[key].get(
+                    "_score", 0
+                ):
+                    seen[key] = chunk
+
+        merged = sorted(seen.values(), key=lambda c: c.get("_score", 0), reverse=True)[
+            :top_k
+        ]
         logger.debug(
-            "EDGAR retrieval for %s: %d chunks above threshold %.2f",
+            "EDGAR retrieval for %s: %d chunks above threshold %.2f (across %d queries)",
             ticker,
-            len(chunks),
+            len(merged),
             threshold,
+            len(query_templates),
         )
-        return chunks
+        return merged
     except Exception:
         logger.exception("EDGAR retrieval failed for ticker=%s", ticker)
         return []

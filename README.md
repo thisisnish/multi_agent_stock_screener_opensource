@@ -167,6 +167,14 @@ edgar:
   chunk_overlap: 0.10        # 10% overlap between consecutive chunks
   similarity_threshold: 0.7  # Minimum cosine similarity for retrieval
   top_k: 5                   # Max chunks injected per debate
+  # One or more query templates used to retrieve disclosure chunks. Each is
+  # embedded and searched independently; results are merged, deduplicated by
+  # chunk identity, re-ranked by similarity, and capped at top_k. {ticker} is
+  # substituted at runtime.
+  retrieval_query_templates:
+    - "SEC filing risk factors financial performance {ticker}"
+    # - "revenue growth capital allocation outlook {ticker}"
+    # - "management guidance forward looking statements {ticker}"
 ```
 
 ---

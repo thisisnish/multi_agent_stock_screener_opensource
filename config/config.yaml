@@ -115,5 +115,12 @@ edgar:
   # Minimum cosine similarity for a retrieved chunk to be included in context.
   similarity_threshold: 0.7
 
+  # Query templates used to retrieve disclosure chunks. Each template is embedded
+  # and searched independently; results are merged, deduplicated, and re-ranked
+  # by similarity before the top_k are injected into the debate. {ticker} is
+  # substituted at runtime.
+  retrieval_query_templates:
+    - "SEC filing risk factors financial performance {ticker}"
+
   # Maximum number of chunks injected per ticker per debate.
   top_k: 5

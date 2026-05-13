@@ -79,7 +79,9 @@ async def get_disclosure_chunks_async(
     try:
         for template in query_templates:
             query = template.format(ticker=ticker)
-            embedding: list[float] = await asyncio.to_thread(embedder.embed_query, query)
+            embedding: list[float] = await asyncio.to_thread(
+                embedder.embed_query, query
+            )
             results = await dao.vector_search(
                 CHUNKS,
                 embedding,
@@ -90,10 +92,14 @@ async def get_disclosure_chunks_async(
             for chunk in results:
                 # Deduplicate by (period, chunk_index); keep the higher-scoring hit
                 key = f"{chunk.get('period', '')}_{chunk.get('chunk_index', '')}"
-                if key not in seen or chunk.get("_score", 0) > seen[key].get("_score", 0):
+                if key not in seen or chunk.get("_score", 0) > seen[key].get(
+                    "_score", 0
+                ):
                     seen[key] = chunk
 
-        merged = sorted(seen.values(), key=lambda c: c.get("_score", 0), reverse=True)[:top_k]
+        merged = sorted(seen.values(), key=lambda c: c.get("_score", 0), reverse=True)[
+            :top_k
+        ]
         logger.debug(
             "EDGAR retrieval for %s: %d chunks above threshold %.2f (across %d queries)",
             ticker,

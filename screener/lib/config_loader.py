@@ -235,6 +235,7 @@ class EdgarConfig(BaseModel):
     chunk_overlap: float = 0.10
     similarity_threshold: float = 0.7
     top_k: int = 5
+    retrieval_query_template: str = "SEC filing risk factors financial performance {ticker}"
 
     @field_validator("chunk_overlap")
     @classmethod

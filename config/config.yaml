@@ -115,5 +115,10 @@ edgar:
   # Minimum cosine similarity for a retrieved chunk to be included in context.
   similarity_threshold: 0.7
 
+  # Query template used when embedding the retrieval query. {ticker} is replaced
+  # at runtime. Override to focus retrieval on a different aspect of the filing
+  # (e.g. "revenue growth capital allocation {ticker}").
+  retrieval_query_template: "SEC filing risk factors financial performance {ticker}"
+
   # Maximum number of chunks injected per ticker per debate.
   top_k: 5

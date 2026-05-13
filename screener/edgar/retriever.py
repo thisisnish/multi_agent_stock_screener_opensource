@@ -46,8 +46,9 @@ async def get_disclosure_chunks_async(
     embedder,
     top_k: int = 5,
     threshold: float = 0.7,
+    query_template: str = "SEC filing risk factors financial performance {ticker}",
 ) -> list[dict]:
-    """Embed a generic SEC risk/performance query and retrieve matching chunks.
+    """Embed a query and retrieve matching EDGAR chunks for a ticker.
 
     Uses ``asyncio.to_thread`` so the synchronous embedder.embed_query call
     does not block the event loop.
@@ -59,12 +60,14 @@ async def get_disclosure_chunks_async(
         top_k: Maximum number of chunks to return.
         threshold: Minimum cosine similarity score (0.0–1.0). Chunks below this
             are dropped by the DAO's vector_search implementation.
+        query_template: Query string template. ``{ticker}`` is replaced with the
+            ticker symbol before embedding. Defaults to the built-in risk/performance query.
 
     Returns:
         List of up to ``top_k`` chunk dicts, ordered by descending similarity.
         Each dict may include a ``_score`` key. Returns empty list on error.
     """
-    query = f"SEC filing risk factors financial performance {ticker}"
+    query = query_template.format(ticker=ticker)
     try:
         embedding: list[float] = await asyncio.to_thread(embedder.embed_query, query)
         chunks = await dao.vector_search(

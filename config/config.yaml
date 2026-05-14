@@ -124,3 +124,11 @@ edgar:
 
   # Maximum number of chunks injected per ticker per debate.
   top_k: 5
+
+  # P2-08: Section-awareness retrieval boosting.
+  # List the canonical section names whose chunks should receive a +0.05 score
+  # boost during retrieval.  Leave empty to disable boosting (default).
+  # Valid canonical names: "Risk Factors", "MD&A", "Financial Statements",
+  # "Business", "Legal Proceedings", "Quantitative and Qualitative Disclosures",
+  # "Controls and Procedures".
+  retrieval_sections: []

@@ -37,3 +37,31 @@ variable "function_name" {
   type        = string
   default     = "eval-handler"
 }
+
+# ---------------------------------------------------------------------------
+# P2-05: Empty EDGAR retrieval alerting
+# ---------------------------------------------------------------------------
+
+variable "enable_empty_retrieval_alert" {
+  description = <<-EOT
+    P2-05: Enable a log-based alert that fires when the screener_job emits
+    "EDGAR retrieval returned 0 chunks" WARN messages during a run.
+    Set to false to disable (e.g. during initial deployment before the EDGAR
+    index is fully built).  This Terraform variable gates whether the Cloud
+    Monitoring alert policy is deployed at all.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "empty_retrieval_alert_window_seconds" {
+  description = "Rolling window (seconds) over which empty-retrieval log entries are counted before alerting."
+  type        = number
+  default     = 3600
+}
+
+variable "empty_retrieval_alert_threshold" {
+  description = "Number of empty-retrieval log entries within the window that triggers an alert. Default 3 ≈ 20% of a 15-ticker run."
+  type        = number
+  default     = 3
+}

@@ -14,12 +14,19 @@ NEWS_SYSTEM_PROMPT  — str
 
 build_ticker_context(ticker, ticker_name, signals, news, disclosure_block) -> str
 build_judge_context(ticker, ticker_name, bull_output, bear_output, ...) -> str
-build_disclosure_block(chunks) -> str | None
+build_disclosure_block(chunks, ticker, max_tokens) -> str | None
 """
 
 from __future__ import annotations
 
+import logging
 import json
+
+logger = logging.getLogger(__name__)
+
+# Approximate tokens-per-character ratio for naive token counting.
+# Using 4 characters-per-token (standard GPT approximation).
+_CHARS_PER_TOKEN: float = 4.0
 
 # Minimum months of history before adaptive weighting is applied in the Judge prompt.
 SCORING_MIN_SAMPLE: int = 4
@@ -273,12 +280,43 @@ def build_judge_context(
     return "\n".join(lines)
 
 
-def build_disclosure_block(chunks: list[dict] | None) -> str | None:
+def _estimate_tokens(text: str) -> int:
+    """Naively estimate token count for a string using character-based heuristic.
+
+    Uses 4 characters-per-token, which is a standard approximation for English
+    prose with GPT-family tokenisers.  Sufficient for budget enforcement where
+    rough estimates (±20 %) are acceptable.
+
+    Args:
+        text: The string to estimate.
+
+    Returns:
+        Estimated token count (always >= 1 when text is non-empty).
+    """
+    return max(1, int(len(text) / _CHARS_PER_TOKEN))
+
+
+def build_disclosure_block(
+    chunks: list[dict] | None,
+    ticker: str = "",
+    max_tokens: int = 0,
+) -> str | None:
     """Format EDGAR chunk dicts into a concise disclosure block string.
+
+    P2-06: Each filing header line is annotated with ``[relevance: X.XX]`` when
+    a ``_score`` key is present in the chunk dict.
+
+    P2-09: When ``max_tokens > 0``, chunks (sorted by descending score) are
+    accumulated until the cumulative token count would exceed the budget.
+    Excess chunks are dropped and a log message is emitted at INFO level.
 
     Args:
         chunks: List of chunk dicts from StorageDAO.vector_search(). Each dict
             should have at least a ``text`` key. An empty list or None returns None.
+        ticker: Ticker symbol — used in log messages only. Optional.
+        max_tokens: Token budget for injected context.  0 disables the cap
+            (unlimited).  Chunks are dropped lowest-score-first when the budget
+            would be exceeded.
 
     Returns:
         Formatted multi-chunk disclosure string, or None if chunks is empty.
@@ -286,12 +324,64 @@ def build_disclosure_block(chunks: list[dict] | None) -> str | None:
     if not chunks:
         return None
 
+    # P2-09: enforce token budget — sort by descending score so highest-value
+    # chunks are retained; drop the tail if the running total exceeds the limit.
+    working_chunks = list(chunks)
+    if max_tokens > 0:
+        # Sort descending by score (chunks without a score sort last).
+        working_chunks.sort(key=lambda c: c.get("_score", 0.0), reverse=True)
+        accepted: list[dict] = []
+        cumulative_tokens = 0
+        for chunk in working_chunks:
+            text = chunk.get("text", "").strip()
+            if not text:
+                continue
+            chunk_tokens = _estimate_tokens(text)
+            if cumulative_tokens + chunk_tokens > max_tokens:
+                # Budget exhausted — stop accumulating.
+                break
+            accepted.append(chunk)
+            cumulative_tokens += chunk_tokens
+
+        dropped = len([c for c in working_chunks if c.get("text", "").strip()]) - len(
+            accepted
+        )
+        label_prefix = f" for {ticker}" if ticker else ""
+        logger.info(
+            "Injecting %d chunks (%d tokens)%s; %d chunk(s) dropped to respect budget",
+            len(accepted),
+            cumulative_tokens,
+            label_prefix,
+            dropped,
+        )
+        working_chunks = accepted
+    else:
+        # No budget cap — log 0 dropped for observability.
+        total_tokens = sum(
+            _estimate_tokens(c.get("text", "").strip())
+            for c in working_chunks
+            if c.get("text", "").strip()
+        )
+        label_prefix = f" for {ticker}" if ticker else ""
+        logger.info(
+            "Injecting %d chunks (%d tokens)%s; 0 chunks dropped to respect budget",
+            len(working_chunks),
+            total_tokens,
+            label_prefix,
+        )
+
     parts: list[str] = []
-    for i, chunk in enumerate(chunks, start=1):
+    for i, chunk in enumerate(working_chunks, start=1):
         text = chunk.get("text", "").strip()
         filing_type = chunk.get("filing_type", "SEC Filing")
         filing_date = chunk.get("filing_date", "")
+        score = chunk.get("_score")
+
+        # P2-06: annotate header with relevance score when available.
         label = f"{filing_type} ({filing_date})" if filing_date else filing_type
+        if score is not None:
+            label = f"{label} [relevance: {score:.2f}]"
+
         if text:
             parts.append(f"[{i}] {label}:\n{text}")
 

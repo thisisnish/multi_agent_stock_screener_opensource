@@ -252,6 +252,8 @@ def make_build_context_node(dao: "StorageDAO", app_config: "AppConfig"):
             top_k=edgar_cfg.top_k,
             threshold=edgar_cfg.similarity_threshold,
             query_templates=templates,
+            retrieval_sections=edgar_cfg.retrieval_sections,
+            embedder_model=app_config.llm.embedder_model,
         )
 
         disclosures_col = _disclosures_collection(ticker)

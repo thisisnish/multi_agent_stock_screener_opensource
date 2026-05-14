@@ -17,7 +17,7 @@ Works with any LLM provider (Anthropic, OpenAI, Gemini, Ollama, Groq). Storage r
 
 3. **Memory** — The system tracks every verdict and whether it turned out to be correct. After enough history, the debate adapts — if Bull has been more accurate for a given ticker, its arguments carry more weight with the Judge.
 
-4. **SEC filings** — 10-K and 10-Q filings are indexed monthly and injected into the debate as context. Bull and Bear must cite which sources they used.
+4. **SEC filings** — 10-K and 10-Q filings are indexed monthly, section-tagged, deduplicated, and injected into the debate context with per-chunk relevance scores. Retrieval metrics (scores, dedup stats, empty-retrieval markers) are written to Firestore for observability. Bull and Bear must cite which sources they used.
 
 5. **Eval** — Once a month, all closed picks are scored for decision quality (0–100). The score feeds back into the next month's Judge prompt so the system gets better over time.
 
@@ -175,6 +175,17 @@ edgar:
     - "SEC filing risk factors financial performance {ticker}"
     # - "revenue growth capital allocation outlook {ticker}"
     # - "management guidance forward looking statements {ticker}"
+
+  # Optional: boost retrieval score (+0.05) for chunks from these sections.
+  # Leave empty to disable (default). Valid names: "Risk Factors", "MD&A",
+  # "Financial Statements", "Business", "Legal Proceedings",
+  # "Quantitative and Qualitative Disclosures", "Controls and Procedures".
+  retrieval_sections: []
+
+  # Token budget for the disclosure block injected into Bull/Bear prompts.
+  # Lowest-scoring chunks are dropped when the cumulative count would exceed
+  # this value. Set to 0 to disable the cap entirely.
+  max_disclosure_tokens: 2048
 ```
 
 ---

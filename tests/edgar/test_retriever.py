@@ -738,6 +738,49 @@ def test_get_disclosure_chunks_async_keeps_distinct_texts():
     assert len(results) == 2
 
 
+def test_dedup_stats_written_to_firestore_when_chunks_dropped():
+    """Dedup dropped count is persisted to Firestore metadata doc."""
+    from screener.edgar.retriever import get_disclosure_chunks_async
+
+    dao = _mock_dao()
+    embedder = _mock_embedder(embedding_dim=4)
+
+    same_text = "Boilerplate risk language repeated across quarters. " * 10
+    chunk_q1 = {
+        "ticker": "MSFT",
+        "period": "2024-03-31",
+        "chunk_index": 0,
+        "section": "",
+        "text": same_text,
+        "_score": 0.90,
+    }
+    chunk_q2 = {
+        "ticker": "MSFT",
+        "period": "2024-06-30",
+        "chunk_index": 0,
+        "section": "",
+        "text": same_text,
+        "_score": 0.75,
+    }
+    dao.vector_search = AsyncMock(return_value=[chunk_q1, chunk_q2])
+
+    asyncio.run(
+        get_disclosure_chunks_async("MSFT", dao, embedder, top_k=5, threshold=0.5)
+    )
+
+    # dao.set should have been called for the dedup stats doc
+    set_calls = dao.set.call_args_list
+    dedup_calls = [
+        c
+        for c in set_calls
+        if "MSFT" in str(c.args[0]) and "disclosures" in str(c.args[0])
+    ]
+    assert len(dedup_calls) == 1, "Expected exactly one dedup stats write to Firestore"
+    written_data = dedup_calls[0].args[2]
+    assert written_data["dedup_dropped_count"] == 1
+    assert written_data["chunks_returned"] == 1
+
+
 def test_dedup_normalise_and_hash_are_case_punctuation_insensitive():
     """_normalise_text and _text_hash treat casing/punctuation differences as equal."""
     from screener.edgar.retriever import _normalise_text, _text_hash

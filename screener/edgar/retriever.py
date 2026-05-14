@@ -166,6 +166,23 @@ async def get_disclosure_chunks_async(
             len(unique),
         )
 
+        # P2-10: persist dedup stats to Firestore for post-hoc analysis.
+        run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        try:
+            await dao.set(
+                f"analysis/{ticker.upper()}/disclosures",
+                run_id,
+                {
+                    "dedup_dropped_count": dropped,
+                    "chunks_returned": len(unique),
+                    "run_timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+        except Exception:
+            logger.exception(
+                "Failed to write dedup stats to Firestore for ticker=%s", ticker
+            )
+
         logger.debug(
             "EDGAR retrieval for %s: %d chunks above threshold %.2f (across %d queries)",
             ticker,

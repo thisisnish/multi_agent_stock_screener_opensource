@@ -49,7 +49,7 @@ memory_read → build_context → debate_node → conviction_node
 | Node | Type | Description |
 |------|------|-------------|
 | `memory_read` | async I/O | Read per-ticker verdict history; compute adaptive bull/bear weights from scored prior months |
-| `build_context` | async I/O | Vector-search EDGAR chunks and build disclosure block |
+| `build_context` | async I/O | Vector-search EDGAR chunks (section-aware boosting, dedup); write per-run observability to Firestore (chunk scores, empty-retrieval markers); build disclosure block with token budget enforcement |
 | `debate_node` | LLM × 2 (parallel) | Bull + Bear run simultaneously via `asyncio.gather` |
 | `conviction_node` | white-box | Source diversity + hedge penalty score for Bull and Bear; scales by adaptive weights when ≥4 scored months |
 | `judge_node` | LLM × 1 | Adjudicates debate; declares BUY/SELL/HOLD + margin + decisive factor |
@@ -59,7 +59,7 @@ memory_read → build_context → debate_node → conviction_node
 
 **Episodic memory**: Each ticker accumulates a scored verdict history. After ≥4 scored months, the debate adapts — Bull/Bear weights shift toward whichever side has been more accurate for this ticker.
 
-**Systemic memory (RAG)**: 10-K and 10-Q filings are chunked (512 tokens, 10% overlap), embedded (OpenAI text-embedding-3-large, dim 3072), and injected into Bull + Bear context. Retrieval uses cosine similarity with ticker pre-filter, threshold 0.7.
+**Systemic memory (RAG)**: 10-K and 10-Q filings are chunked (512 tokens, 10% overlap), section-tagged (Item 1A/7/8 etc.), and embedded via the configured embedder (default: OpenAI text-embedding-3-large, dim 3072). If `llm.embedder_model` changes in config, `index_ticker()` detects the drift against the stored sentinel and forces a full re-index automatically. Retrieval uses cosine similarity with ticker pre-filter (threshold 0.7), optional section-aware score boosting (+0.05 for sections in `edgar.retrieval_sections`), and text-hash deduplication of near-identical chunks. The disclosure block is token-budget capped (`edgar.max_disclosure_tokens`, default 2048; lowest-scoring chunks dropped first). Per-run observability — chunk scores, dedup counts, empty-retrieval markers — is written to `analysis/{TICKER}/disclosures/{run_id}` and logged to stdout.
 
 **Eval feedback loop**: Monthly eval scores are written to `eval/{MONTH_ID}` and injected as `eval_context` into the Judge prompt the following month. The Judge receives its own historical accuracy, directional bias, and systematic issues.
 
@@ -105,7 +105,8 @@ All collections live in one logical database: `multi-agent-stock-screener`.
 | `signals/{TICKER}_{MONTH_ID}` | `AAPL_2026-04` | Quarterly fundamentals |
 | `picks/{TICKER}_{MONTH_ID}_{source}` | `AAPL_2026-04_judge` | Unified pick ledger |
 | `performance/{MONTH_ID}_{source}` | `2026-04_judge` | Win rate, alpha, bull/bear accuracy |
-| `chunks/{DOC_ID}` | sha256 hash | EDGAR vector chunks |
+| `chunks/{DOC_ID}` | sha256 hash | EDGAR vector chunks (includes `section`, `embedder_model` fields) |
+| `analysis/{TICKER}/disclosures/{run_id}` | ISO timestamp | Per-run EDGAR retrieval observability: chunk scores (min/max/mean), dedup dropped count, empty-retrieval marker |
 | `eval/{MONTH_ID}` | `2026-04` | Monthly quality metrics + acid test |
 | `calibration/{Nm_source}` | `12m_judge` | Rolling N-month calibration report (High>Med>Low check) |
 | `calibration/weights_{source}` | `weights_judge` | Recommended confidence weight overrides; written when calibration drifts |
@@ -150,3 +151,7 @@ Eval output feeds back into the Judge prompt next month as `eval_context`.
 - **Sector cap**: Max 3 picks per GICS sector in top N.
 - **No HTTP surface**: All entry points are `python main.py`. No Flask, no inbound webhooks.
 - **Zero hardcoded secrets**: All API keys resolved from env vars at runtime.
+- **EDGAR observability**: Per-run chunk score stats (min/max/mean) and dedup counts are written to `analysis/{TICKER}/disclosures/{run_id}`. Empty retrieval (0 chunks above threshold) emits a WARN log and writes an `empty_retrieval` marker doc to the same path.
+- **Embedder drift detection**: `index_ticker()` stamps `embedder_model` on every chunk doc and the freshness sentinel. If `llm.embedder_model` changes in config, the next run detects the mismatch and forces a full re-index for that ticker.
+- **Section-aware retrieval**: Chunks are tagged with their 10-K/10-Q section heading at index time. Sections listed in `edgar.retrieval_sections` receive a +0.05 cosine score boost during retrieval. Empty list (default) disables boosting.
+- **Disclosure token budget**: Chunks are dropped lowest-score-first when the cumulative token count would exceed `edgar.max_disclosure_tokens` (default 2048). Set to 0 to disable. Injection counts are logged at INFO level per run.

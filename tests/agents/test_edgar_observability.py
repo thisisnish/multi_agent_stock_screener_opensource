@@ -214,12 +214,10 @@ class TestTokenBudgetEnforcement:
         cfg = EdgarConfig()
         assert cfg.max_disclosure_tokens == 2048
 
-    def test_config_max_disclosure_tokens_validator_rejects_zero(self):
-        """EdgarConfig rejects max_disclosure_tokens < 1."""
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            EdgarConfig(max_disclosure_tokens=0)
+    def test_config_max_disclosure_tokens_validator_accepts_zero(self):
+        """EdgarConfig accepts max_disclosure_tokens=0 (disables budget cap)."""
+        cfg = EdgarConfig(max_disclosure_tokens=0)
+        assert cfg.max_disclosure_tokens == 0
 
 
 # ---------------------------------------------------------------------------
@@ -475,12 +473,10 @@ class TestEdgarConfigSchema:
         cfg = EdgarConfig(max_disclosure_tokens=512)
         assert cfg.max_disclosure_tokens == 512
 
-    def test_max_disclosure_tokens_rejects_zero(self):
-        """max_disclosure_tokens=0 raises ValidationError."""
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            EdgarConfig(max_disclosure_tokens=0)
+    def test_max_disclosure_tokens_accepts_zero(self):
+        """max_disclosure_tokens=0 is valid and disables the budget cap."""
+        cfg = EdgarConfig(max_disclosure_tokens=0)
+        assert cfg.max_disclosure_tokens == 0
 
     def test_max_disclosure_tokens_rejects_negative(self):
         """Negative max_disclosure_tokens raises ValidationError."""
@@ -488,20 +484,3 @@ class TestEdgarConfigSchema:
 
         with pytest.raises(ValidationError):
             EdgarConfig(max_disclosure_tokens=-100)
-
-    def test_empty_retrieval_alert_threshold_default(self):
-        """empty_retrieval_alert_threshold defaults to 0.20."""
-        cfg = EdgarConfig()
-        assert cfg.empty_retrieval_alert_threshold == 0.20
-
-    def test_empty_retrieval_alert_threshold_accepts_one(self):
-        """empty_retrieval_alert_threshold=1.0 is valid (disables alerting)."""
-        cfg = EdgarConfig(empty_retrieval_alert_threshold=1.0)
-        assert cfg.empty_retrieval_alert_threshold == 1.0
-
-    def test_empty_retrieval_alert_threshold_rejects_above_one(self):
-        """empty_retrieval_alert_threshold > 1.0 raises ValidationError."""
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            EdgarConfig(empty_retrieval_alert_threshold=1.1)

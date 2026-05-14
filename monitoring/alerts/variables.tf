@@ -47,9 +47,8 @@ variable "enable_empty_retrieval_alert" {
     P2-05: Enable a log-based alert that fires when the screener_job emits
     "EDGAR retrieval returned 0 chunks" WARN messages during a run.
     Set to false to disable (e.g. during initial deployment before the EDGAR
-    index is fully built).  Controlled by edgar.empty_retrieval_alert_threshold
-    in config.yaml at the application level; this Terraform variable gates
-    whether the Cloud Monitoring alert policy is deployed at all.
+    index is fully built).  This Terraform variable gates whether the Cloud
+    Monitoring alert policy is deployed at all.
   EOT
   type        = bool
   default     = true

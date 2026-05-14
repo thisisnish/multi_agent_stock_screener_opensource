@@ -244,11 +244,9 @@ class EdgarConfig(BaseModel):
     retrieval_sections: list[str] = []
     # P2-09: Token budget for injected disclosure context.  Chunks are dropped
     # (lowest-scoring first) when the cumulative token count would exceed this
-    # value.  Default 2048 ≈ 4× top_k × 512-token chunks with headroom.
+    # value.  Set to 0 to disable the budget cap entirely.
+    # Default 2048 ≈ 4× top_k × 512-token chunks with headroom.
     max_disclosure_tokens: int = 2048
-    # P2-05: Fraction of tickers in a run that may return empty retrieval
-    # before an operator alert is warranted.  Set to 1.0 to disable.
-    empty_retrieval_alert_threshold: float = 0.20
 
     @field_validator("chunk_overlap")
     @classmethod
@@ -268,18 +266,9 @@ class EdgarConfig(BaseModel):
 
     @field_validator("max_disclosure_tokens")
     @classmethod
-    def max_disclosure_tokens_must_be_positive(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError(f"edgar.max_disclosure_tokens must be >= 1, got {v}")
-        return v
-
-    @field_validator("empty_retrieval_alert_threshold")
-    @classmethod
-    def alert_threshold_must_be_fraction(cls, v: float) -> float:
-        if not 0.0 <= v <= 1.0:
-            raise ValueError(
-                f"edgar.empty_retrieval_alert_threshold must be in [0.0, 1.0], got {v}"
-            )
+    def max_disclosure_tokens_must_be_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError(f"edgar.max_disclosure_tokens must be >= 0, got {v}")
         return v
 
 

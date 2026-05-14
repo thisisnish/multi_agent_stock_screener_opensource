@@ -8,6 +8,7 @@ Indexer (TB-07):
         Fetches 10-K/10-Q filings from SEC EDGAR, chunks them, embeds via
         the configured embedder model, and writes chunk vectors to the DAO.
         Respects ``edgar.freshness_days`` — skips if the index is fresh.
+        Detects embedder model changes (P2-07) and forces re-index on mismatch.
 
 Retrieval helpers (existing RAG pipeline):
     get_disclosure_chunks_async(ticker, dao, embedder, top_k, threshold)
@@ -17,8 +18,10 @@ Retrieval helpers (existing RAG pipeline):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import math
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -39,6 +42,27 @@ _EMBED_BATCH_SIZE = 20
 # Retry config for embedding API 429 / quota errors.
 _EMBED_RETRY_DELAYS = (10, 30, 60)  # seconds between attempts (max 3 retries)
 
+# P2-08: Score boost applied to chunks whose section matches a configured retrieval_section.
+_SECTION_BOOST = 0.05
+
+# P2-10: Regex for normalising text before hashing for deduplication.
+_DEDUP_NORMALISE_RE = re.compile(r"[^\w\s]")
+
+
+def _normalise_text(text: str) -> str:
+    """Return a normalised form of *text* for deduplication hashing.
+
+    Lowercases, strips punctuation, collapses whitespace.
+    """
+    lowered = text.lower()
+    no_punct = _DEDUP_NORMALISE_RE.sub("", lowered)
+    return " ".join(no_punct.split())
+
+
+def _text_hash(text: str) -> str:
+    """MD5 hex digest of the normalised form of *text*."""
+    return hashlib.md5(_normalise_text(text).encode()).hexdigest()
+
 
 async def get_disclosure_chunks_async(
     ticker: str,
@@ -47,12 +71,21 @@ async def get_disclosure_chunks_async(
     top_k: int = 5,
     threshold: float = 0.7,
     query_templates: list[str] | None = None,
+    retrieval_sections: list[str] | None = None,
+    embedder_model: str | None = None,
 ) -> list[dict]:
     """Embed one or more queries and retrieve matching EDGAR chunks for a ticker.
 
     Each query template is embedded and searched independently. Results are
     merged, deduplicated by chunk_index+period (keeping the highest score per
     chunk), and returned sorted by descending similarity, capped at ``top_k``.
+
+    P2-08: If ``retrieval_sections`` is non-empty, chunks whose ``section``
+    field matches an entry receive a +0.05 boost to their similarity score
+    before sorting.
+
+    P2-10: After sorting, near-duplicate chunks (same normalised-text MD5 hash)
+    are dropped — only the highest-scoring copy is kept.
 
     Uses ``asyncio.to_thread`` so synchronous embedder calls don't block the
     event loop.
@@ -67,6 +100,10 @@ async def get_disclosure_chunks_async(
         query_templates: List of query string templates. ``{ticker}`` is replaced
             with the ticker symbol before embedding. Defaults to the built-in
             risk/performance query.
+        retrieval_sections: Optional list of section names to boost. Chunks
+            matching a listed section have +0.05 added to their score.
+        embedder_model: String identifier of the embedder in use — logged for
+            observability.  If ``None``, the log entry omits the model label.
 
     Returns:
         List of up to ``top_k`` chunk dicts, ordered by descending similarity.
@@ -74,6 +111,9 @@ async def get_disclosure_chunks_async(
     """
     if not query_templates:
         query_templates = ["SEC filing risk factors financial performance {ticker}"]
+
+    model_label = embedder_model or "unknown"
+    logger.debug("Querying with embedder=%s for ticker=%s", model_label, ticker)
 
     seen: dict[str, dict] = {}  # dedup key → best chunk
     try:
@@ -97,17 +137,43 @@ async def get_disclosure_chunks_async(
                 ):
                     seen[key] = chunk
 
+        # P2-08: apply section score boost before sorting
+        boosted_sections = set(retrieval_sections) if retrieval_sections else set()
+        if boosted_sections:
+            for chunk in seen.values():
+                if chunk.get("section", "") in boosted_sections:
+                    chunk["_score"] = chunk.get("_score", 0.0) + _SECTION_BOOST
+
         merged = sorted(seen.values(), key=lambda c: c.get("_score", 0), reverse=True)[
             :top_k
         ]
+
+        # P2-10: text-hash deduplication — drop lower-scoring chunks with identical
+        # normalised text.  We iterate in score-descending order so the first
+        # occurrence (highest score) always wins.
+        seen_hashes: set[str] = set()
+        unique: list[dict] = []
+        for chunk in merged:
+            h = _text_hash(chunk.get("text", ""))
+            if h not in seen_hashes:
+                seen_hashes.add(h)
+                unique.append(chunk)
+
+        dropped = len(merged) - len(unique)
+        logger.debug(
+            "Deduplication: dropped %d near-duplicate chunks, returning %d unique",
+            dropped,
+            len(unique),
+        )
+
         logger.debug(
             "EDGAR retrieval for %s: %d chunks above threshold %.2f (across %d queries)",
             ticker,
-            len(merged),
+            len(unique),
             threshold,
             len(query_templates),
         )
-        return merged
+        return unique
     except Exception:
         logger.exception("EDGAR retrieval failed for ticker=%s", ticker)
         return []
@@ -153,6 +219,10 @@ class EDGARRetriever:
     symbol.  Freshness is checked per-ticker: if the index sentinel doc is
     younger than ``app_config.edgar.freshness_days``, the ticker is skipped.
 
+    P2-07: The sentinel doc also records the ``embedder_model`` used when the
+    index was built.  If the current config value differs from the stored value,
+    the existing index is deleted and rebuilt from scratch.
+
     Args:
         app_config: Loaded :class:`~screener.lib.config_loader.AppConfig`.
         dao: :class:`~screener.lib.storage.base.StorageDAO` implementation to
@@ -177,11 +247,14 @@ class EDGARRetriever:
         """Fetch, chunk, embed, and write EDGAR filings for *symbol*.
 
         Steps:
-        1. Check the freshness sentinel — skip if the index is current.
-        2. Fetch filings via :mod:`screener.edgar.fetcher`.
-        3. Embed all chunks in batches (with retry on quota errors).
-        4. Write chunk docs to the ``chunks/`` collection (idempotent doc IDs).
-        5. Update the freshness sentinel.
+        1. Check the freshness sentinel — skip if the index is current AND
+           the stored embedder_model matches the configured one.
+        2. If the embedder model changed (P2-07), delete all existing chunks
+           for the ticker before re-indexing.
+        3. Fetch filings via :mod:`screener.edgar.fetcher`.
+        4. Embed all chunks in batches (with retry on quota errors).
+        5. Write chunk docs to the ``chunks/`` collection (idempotent doc IDs).
+        6. Update the freshness sentinel (including embedder_model).
 
         This method is async so all DAO calls share a single event loop created
         by the caller (``edgar_disclosure/main.py``), which prevents the
@@ -198,14 +271,30 @@ class EDGARRetriever:
             Number of chunk documents written (0 on skip or dry-run).
         """
         slug = ticker_to_slug(symbol)
+        current_model = self._cfg.llm.embedder_model
 
-        if await self._is_fresh(slug):
+        fresh, model_drifted, stored_model = await self._check_freshness_and_drift(
+            slug, current_model
+        )
+
+        if fresh and not model_drifted:
             logger.info(
                 "EDGAR index is fresh — skipping ticker=%s (freshness_days=%d)",
                 symbol,
                 self._cfg.edgar.freshness_days,
             )
             return 0
+
+        # P2-07: if embedder model changed, purge the stale vector index first.
+        if model_drifted and stored_model:
+            logger.warning(
+                "Embedder model changed from %s to %s; forcing re-index for %s",
+                stored_model,
+                current_model,
+                symbol,
+            )
+            if not dry_run:
+                await self._delete_ticker_chunks(slug)
 
         from screener.edgar.fetcher import get_filing_chunks
 
@@ -218,6 +307,10 @@ class EDGARRetriever:
         if not chunks:
             logger.warning("EDGAR: no chunks produced for ticker=%s", symbol)
             return 0
+
+        # Stamp each chunk with the current embedder model (P2-07).
+        for chunk in chunks:
+            chunk["embedder_model"] = current_model
 
         logger.info("EDGAR: embedding %d chunks for ticker=%s", len(chunks), symbol)
         # _embed_chunks is synchronous (uses time.sleep for backoff).  Running it
@@ -234,7 +327,7 @@ class EDGARRetriever:
             )
             return 0
 
-        written = await self._write_chunks(enriched, slug)
+        written = await self._write_chunks(enriched, slug, current_model)
         logger.info("EDGAR: wrote %d chunks for ticker=%s", written, symbol)
         return written
 
@@ -275,6 +368,56 @@ class EDGARRetriever:
             f"Supported: google_genai, openai."
         )
 
+    async def _check_freshness_and_drift(
+        self, slug: str, current_model: str
+    ) -> tuple[bool, bool, str | None]:
+        """Check index freshness and embedder model drift simultaneously.
+
+        Reads the sentinel doc once and returns three values so ``index_ticker``
+        can decide whether to skip, re-index from scratch, or do a normal
+        incremental run.
+
+        Args:
+            slug: Canonical ticker slug.
+            current_model: The embedder model string from the current config.
+
+        Returns:
+            ``(is_fresh, model_drifted, stored_model)`` where:
+            - ``is_fresh``: ``True`` if ``indexed_at`` is within freshness_days.
+            - ``model_drifted``: ``True`` if the stored model differs from
+              ``current_model``.  Always ``False`` when the sentinel is missing.
+            - ``stored_model``: The ``embedder_model`` recorded in the sentinel,
+              or ``None`` if absent.
+        """
+        doc_id = f"{slug}{_INDEX_DOC_SUFFIX}"
+        doc: dict | None = await self._dao.get(CHUNKS, doc_id)
+
+        if not doc:
+            return False, False, None
+
+        # --- freshness ---
+        indexed_at = doc.get("indexed_at")
+        is_fresh = False
+        if indexed_at is not None:
+            if isinstance(indexed_at, str):
+                try:
+                    indexed_at = datetime.fromisoformat(indexed_at)
+                except ValueError:
+                    indexed_at = None
+            if isinstance(indexed_at, datetime):
+                if indexed_at.tzinfo is None:
+                    indexed_at = indexed_at.replace(tzinfo=timezone.utc)
+                cutoff = datetime.now(timezone.utc) - timedelta(
+                    days=self._cfg.edgar.freshness_days
+                )
+                is_fresh = indexed_at >= cutoff
+
+        # --- P2-07 drift detection ---
+        stored_model: str | None = doc.get("embedder_model")
+        model_drifted = stored_model is not None and stored_model != current_model
+
+        return is_fresh, model_drifted, stored_model
+
     async def _is_fresh(self, slug: str) -> bool:
         """Return ``True`` if the index sentinel is newer than freshness_days.
 
@@ -288,32 +431,33 @@ class EDGARRetriever:
         Returns:
             ``True`` if the index is fresh and should be skipped.
         """
-        doc_id = f"{slug}{_INDEX_DOC_SUFFIX}"
-        doc: dict | None = await self._dao.get(CHUNKS, doc_id)
+        is_fresh, _drifted, _model = await self._check_freshness_and_drift(
+            slug, self._cfg.llm.embedder_model
+        )
+        return is_fresh
 
-        if not doc:
-            return False
+    async def _delete_ticker_chunks(self, slug: str) -> None:
+        """Delete all existing chunk docs for a ticker from the DAO.
 
-        indexed_at = doc.get("indexed_at")
-        if indexed_at is None:
-            return False
+        Queries for all docs whose ``ticker`` field matches the slug (after
+        de-slugging) and deletes them individually.  The sentinel doc is
+        intentionally left in place so the caller can overwrite it with the new
+        embedder model after re-indexing.
 
-        # Normalise to UTC-aware datetime
-        if isinstance(indexed_at, str):
-            try:
-                indexed_at = datetime.fromisoformat(indexed_at)
-            except ValueError:
-                return False
-
-        if isinstance(indexed_at, datetime):
-            if indexed_at.tzinfo is None:
-                indexed_at = indexed_at.replace(tzinfo=timezone.utc)
-            cutoff = datetime.now(timezone.utc) - timedelta(
-                days=self._cfg.edgar.freshness_days
-            )
-            return indexed_at >= cutoff
-
-        return False
+        Args:
+            slug: Canonical ticker slug (e.g. ``"aapl"``).
+        """
+        ticker_upper = slug.upper()
+        existing = await self._dao.query(CHUNKS, {"ticker": ticker_upper})
+        logger.debug(
+            "EDGAR drift purge: deleting %d stale chunks for ticker=%s",
+            len(existing),
+            ticker_upper,
+        )
+        for doc in existing:
+            doc_id = doc.get("_id") or doc.get("id")
+            if doc_id:
+                await self._dao.delete(CHUNKS, doc_id)
 
     def _embed_chunks(self, chunks: list[dict]) -> list[dict]:
         """Embed the ``text`` field of each chunk in batches.
@@ -370,7 +514,9 @@ class EDGARRetriever:
             )
         return enriched
 
-    async def _write_chunks(self, enriched: list[dict], slug: str) -> int:
+    async def _write_chunks(
+        self, enriched: list[dict], slug: str, embedder_model: str
+    ) -> int:
         """Write enriched chunks and the freshness sentinel to the DAO.
 
         Doc IDs are deterministic (``{slug}_{form_type}_{period}_{index:04d}``)
@@ -380,6 +526,8 @@ class EDGARRetriever:
             enriched: Chunks with ``embedding`` and ``indexed_at`` keys.
             slug: Canonical ticker slug — used for the sentinel doc ID and
                 chunk ID prefix.
+            embedder_model: The embedder model string to record in the sentinel
+                (P2-07).
 
         Returns:
             Number of chunk documents written (excludes the sentinel doc).
@@ -391,12 +539,15 @@ class EDGARRetriever:
             doc_id = f"{slug}_{form}_{period}_{idx:04d}"
             await self._dao.set(CHUNKS, doc_id, chunk)
 
-        # Update freshness sentinel
+        # Update freshness sentinel — include embedder_model for drift detection (P2-07).
         sentinel_id = f"{slug}{_INDEX_DOC_SUFFIX}"
         await self._dao.set(
             CHUNKS,
             sentinel_id,
-            {"indexed_at": datetime.now(timezone.utc).isoformat()},
+            {
+                "indexed_at": datetime.now(timezone.utc).isoformat(),
+                "embedder_model": embedder_model,
+            },
         )
 
         return len(enriched)

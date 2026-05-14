@@ -238,6 +238,10 @@ class EdgarConfig(BaseModel):
     retrieval_query_templates: list[str] = [
         "SEC filing risk factors financial performance {ticker}",
     ]
+    # P2-08: Optional list of section names to boost during retrieval.
+    # Chunks whose ``section`` field matches an entry here receive +0.05 to
+    # their similarity score.  Empty list disables boosting (default).
+    retrieval_sections: list[str] = []
 
     @field_validator("chunk_overlap")
     @classmethod

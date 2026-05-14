@@ -7,7 +7,9 @@ Provides:
     fetch_filing_metadata   — list of recent filings for a CIK
     download_primary_document — raw bytes of a filing document
     strip_html              — clean HTML/iXBRL bytes to plain text
-    chunk_text              — sliding-window chunker with metadata
+    detect_section          — identify section heading from a single line
+    annotate_sections       — produce (start, end, section_name) spans for text
+    chunk_text              — sliding-window chunker with metadata + section labels
     get_filing_chunks       — top-level entrypoint combining all steps
 
 Rate-limiting:
@@ -43,6 +45,140 @@ _last_request_time: float = 0.0
 _RATE_LIMIT_GAP = 0.11  # seconds between requests — SEC allows ~10 req/s
 _BACKOFF_START = 1.0
 _BACKOFF_CAP = 60.0
+
+# ---------------------------------------------------------------------------
+# P2-08 — Section awareness
+# ---------------------------------------------------------------------------
+
+# Ordered list of (canonical_name, compiled_pattern) pairs.  We test each
+# pattern against each line of the filing text.  The first match wins and
+# sets the current section until the next heading is detected.
+#
+# Patterns are intentionally loose (case-insensitive, optional punctuation)
+# so they match both the SEC XBRL exhibit style ("Item 1A.") and the free-text
+# inline style ("ITEM 1A — RISK FACTORS").
+_SECTION_PATTERNS_RAW: list[tuple[str, re.Pattern]] = [
+    (
+        "Risk Factors",
+        re.compile(r"item\s+1a[\.\s\-–—]*risk\s+factors", re.IGNORECASE),
+    ),
+    (
+        "Business",
+        re.compile(r"item\s+1[\.\s\-–—]*business\b", re.IGNORECASE),
+    ),
+    (
+        "Legal Proceedings",
+        re.compile(r"item\s+3[\.\s\-–—]*legal\s+proceedings", re.IGNORECASE),
+    ),
+    (
+        "MD&A",
+        re.compile(
+            r"item\s+7[\.\s\-–—]*(management.{0,10}discussion|md\s*&\s*a)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "Quantitative and Qualitative Disclosures",
+        re.compile(
+            r"item\s+7a[\.\s\-–—]*quantitative",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "Financial Statements",
+        re.compile(
+            r"item\s+8[\.\s\-–—]*(financial\s+statements|consolidated\s+financial)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "Controls and Procedures",
+        re.compile(r"item\s+9a[\.\s\-–—]*controls", re.IGNORECASE),
+    ),
+    # 10-Q specific: Item 1 Financial Statements / Item 2 MD&A
+    (
+        "Financial Statements",
+        re.compile(
+            r"item\s+1[\.\s\-–—]*financial\s+statements",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "MD&A",
+        re.compile(
+            r"item\s+2[\.\s\-–—]*(management.{0,10}discussion|md\s*&\s*a)",
+            re.IGNORECASE,
+        ),
+    ),
+]
+
+# De-duplicate: keep first occurrence per canonical name so 10-K patterns
+# take precedence over 10-Q variants that share the same canonical name.
+_seen_section_names: set[str] = set()
+_SECTION_PATTERNS: list[tuple[str, re.Pattern]] = []
+for _name, _pat in _SECTION_PATTERNS_RAW:
+    if _name not in _seen_section_names:
+        _seen_section_names.add(_name)
+        _SECTION_PATTERNS.append((_name, _pat))
+
+
+def detect_section(line: str) -> str | None:
+    """Return the canonical section name if *line* matches a known heading.
+
+    Args:
+        line: A single line of plain-text filing content.
+
+    Returns:
+        Canonical section name string (e.g. ``"Risk Factors"``) or ``None`` if
+        the line does not match any known heading pattern.
+    """
+    for name, pattern in _SECTION_PATTERNS:
+        if pattern.search(line):
+            return name
+    return None
+
+
+def annotate_sections(text: str) -> list[tuple[int, int, str]]:
+    """Return a list of ``(start, end, section_name)`` character spans.
+
+    Scans *text* line by line, tracking the current section.  Each span covers
+    the character range where a particular section is active.  Spans do not
+    overlap and together cover the full text.
+
+    Args:
+        text: Plain-text filing content.
+
+    Returns:
+        List of ``(start_char, end_char, section_name)`` tuples.  ``section_name``
+        is ``""`` for text before the first detected heading.
+    """
+    spans: list[tuple[int, int, str]] = []
+    current_section = ""
+    current_start = 0
+
+    pos = 0
+    for line in text.splitlines(keepends=True):
+        line_start = pos
+        pos += len(line)
+
+        detected = detect_section(line.strip())
+        if detected is not None and detected != current_section:
+            # Close the current span
+            if line_start > current_start:
+                spans.append((current_start, line_start, current_section))
+            current_section = detected
+            current_start = line_start
+
+    # Close final span
+    if pos > current_start:
+        spans.append((current_start, pos, current_section))
+
+    return spans
+
+
+# ---------------------------------------------------------------------------
+# HTML cleaning
+# ---------------------------------------------------------------------------
 
 _cleaner = Cleaner(
     scripts=True,
@@ -258,6 +394,30 @@ def strip_html(raw_bytes: bytes) -> str:
     return text
 
 
+# ---------------------------------------------------------------------------
+# Chunking helpers
+# ---------------------------------------------------------------------------
+
+
+def _section_at(char_pos: int, spans: list[tuple[int, int, str]]) -> str:
+    """Return the section name active at character position *char_pos*.
+
+    Performs a linear scan of *spans*.  The list is expected to be short
+    (one entry per heading) so a binary search is not warranted.
+
+    Args:
+        char_pos: Character offset within the original filing text.
+        spans: Output of :func:`annotate_sections`.
+
+    Returns:
+        Section name string, or ``""`` if no span covers *char_pos*.
+    """
+    for start, end, name in spans:
+        if start <= char_pos < end:
+            return name
+    return ""
+
+
 def chunk_text(
     text: str,
     ticker: str,
@@ -265,12 +425,17 @@ def chunk_text(
     period: str,
     chunk_size: int = 512,
     overlap: float = 0.10,
+    section_spans: list[tuple[int, int, str]] | None = None,
 ) -> list[dict]:
     """Split plain text into overlapping chunks with filing metadata.
 
     Uses a character-based approximation: ``chunk_size * 4`` characters per
     chunk (roughly 4 chars/token).  Chunks shorter than 100 characters after
     stripping are discarded.
+
+    P2-08: If ``section_spans`` is provided (from :func:`annotate_sections`),
+    each chunk's ``section`` field is set to the detected heading active at
+    that chunk's start position.  If omitted, ``section`` defaults to ``""``.
 
     Args:
         text: Plain-text filing content.
@@ -279,6 +444,9 @@ def chunk_text(
         period: Period-of-report date string (e.g. ``"2024-12-31"``).
         chunk_size: Target size in tokens.  Defaults to 512.
         overlap: Overlap fraction (0.0–1.0).  Defaults to 0.10 (10 %).
+        section_spans: Optional list of ``(start, end, section_name)`` spans
+            from :func:`annotate_sections`.  When supplied the ``section``
+            field on each chunk is populated automatically.
 
     Returns:
         List of chunk dicts, each with keys: ``ticker``, ``form_type``,
@@ -291,6 +459,8 @@ def chunk_text(
     overlap_chars = int(char_size * overlap)
     step = char_size - overlap_chars
 
+    spans: list[tuple[int, int, str]] = section_spans or []
+
     chunks = []
     pos = 0
     chunk_index = 0
@@ -299,12 +469,13 @@ def chunk_text(
         end = pos + char_size
         chunk_str = text[pos:end]
         if len(chunk_str.strip()) >= 100:
+            section = _section_at(pos, spans) if spans else ""
             chunks.append(
                 {
                     "ticker": ticker,
                     "form_type": form_type,
                     "period": period,
-                    "section": "",
+                    "section": section,
                     "chunk_index": chunk_index,
                     "text": chunk_str,
                 }
@@ -325,8 +496,8 @@ def get_filing_chunks(
     """Fetch, parse, and chunk all recent filings for a ticker.
 
     Combines :func:`resolve_cik`, :func:`fetch_filing_metadata`,
-    :func:`download_primary_document`, :func:`strip_html`, and
-    :func:`chunk_text` into a single call.
+    :func:`download_primary_document`, :func:`strip_html`,
+    :func:`annotate_sections`, and :func:`chunk_text` into a single call.
 
     Args:
         ticker: Upper-case ticker symbol.
@@ -362,6 +533,9 @@ def get_filing_chunks(
                 filing["primary_document"],
             )
             text = strip_html(raw)
+            # P2-08: detect section boundaries before chunking so each chunk
+            # carries the correct section label.
+            spans = annotate_sections(text)
             chunks = chunk_text(
                 text,
                 ticker,
@@ -369,6 +543,7 @@ def get_filing_chunks(
                 filing["period_of_report"],
                 chunk_size=chunk_size,
                 overlap=overlap,
+                section_spans=spans,
             )
             all_chunks.extend(chunks)
             logger.debug(

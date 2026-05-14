@@ -243,7 +243,7 @@ def make_build_context_node(dao: "StorageDAO", app_config: "AppConfig"):
 
         # Use first query template as the "attempted_query" label for P2-05 marker doc.
         templates = edgar_cfg.retrieval_query_templates
-        attempted_query = (templates[0].format(ticker=ticker) if templates else ticker)
+        attempted_query = templates[0].format(ticker=ticker) if templates else ticker
 
         chunks = await get_disclosure_chunks_async(
             ticker,

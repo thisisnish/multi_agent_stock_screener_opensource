@@ -126,7 +126,9 @@ class TestDisclosureBlockScoreAnnotation:
         assert block is not None
         lines = block.split("\n")
         # First block header should have the first chunk's score
-        header_lines = [line for line in lines if "10-K" in line and "[relevance:" in line]
+        header_lines = [
+            line for line in lines if "10-K" in line and "[relevance:" in line
+        ]
         assert len(header_lines) == 2
         assert "0.85" in header_lines[0]
         assert "0.72" in header_lines[1]
@@ -328,7 +330,9 @@ class TestBuildContextNode:
 
         assert result == {"disclosure_block": None}
         warn_records = [
-            r for r in caplog.records if r.levelno == logging.WARNING and "AAPL" in r.message
+            r
+            for r in caplog.records
+            if r.levelno == logging.WARNING and "AAPL" in r.message
         ]
         assert len(warn_records) >= 1
         assert "0 chunks" in warn_records[0].message

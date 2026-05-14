@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -126,7 +126,7 @@ class TestDisclosureBlockScoreAnnotation:
         assert block is not None
         lines = block.split("\n")
         # First block header should have the first chunk's score
-        header_lines = [l for l in lines if "10-K" in l and "[relevance:" in l]
+        header_lines = [line for line in lines if "10-K" in line and "[relevance:" in line]
         assert len(header_lines) == 2
         assert "0.85" in header_lines[0]
         assert "0.72" in header_lines[1]

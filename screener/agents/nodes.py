@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -51,7 +52,7 @@ from screener.lib.agent_creator import (
 from screener.lib.llm_metrics import TokenAccumulator, emit_token_metric
 from screener.lib.models import BearCaseOutput, BullCaseOutput, JudgeOutput
 from screener.agents.adaptive_weights import compute_adaptive_weights, default_weights
-from screener.lib.storage.schema import memory_collection_path, memory_doc_id
+from screener.lib.storage.schema import memory_collection_path, memory_doc_id, ANALYSIS
 from screener.agents.prompts import SCORING_MIN_SAMPLE
 from screener.metrics.confidence_scorer import score_judge_confidence
 from screener.metrics.conviction_scorer import score_conviction
@@ -61,6 +62,21 @@ if TYPE_CHECKING:
     from screener.lib.storage.base import StorageDAO
 
 logger = logging.getLogger(__name__)
+
+
+def _disclosures_collection(ticker: str) -> str:
+    """Firestore path for a ticker's disclosures subcollection.
+
+    Documents at ``analysis/{TICKER}/disclosures/{run_id}`` store per-run
+    EDGAR retrieval metadata for observability (P2-04, P2-05).
+
+    Args:
+        ticker: Upper-case ticker symbol, e.g. "AAPL".
+
+    Returns:
+        e.g. "analysis/AAPL/disclosures"
+    """
+    return f"{ANALYSIS}/{ticker.upper()}/disclosures"
 
 
 def _resolve_model_id(agent: str, app_config: "AppConfig") -> str:
@@ -191,7 +207,9 @@ def make_build_context_node(dao: "StorageDAO", app_config: "AppConfig"):
 
     async def build_context(state: DebateState) -> dict:
         ticker = state["ticker"]
+        run_id = state.get("month_id", "unknown")
         edgar_cfg = app_config.edgar
+        run_timestamp = datetime.now(timezone.utc).isoformat()
 
         # Lazy import — route on provider prefix to select the correct embedder package
         raw_model = app_config.llm.embedder_model
@@ -223,17 +241,106 @@ def make_build_context_node(dao: "StorageDAO", app_config: "AppConfig"):
             )
             return {"disclosure_block": None}
 
+        # Use first query template as the "attempted_query" label for P2-05 marker doc.
+        templates = edgar_cfg.retrieval_query_templates
+        attempted_query = templates[0].format(ticker=ticker) if templates else ticker
+
         chunks = await get_disclosure_chunks_async(
             ticker,
             dao,
             embedder,
             top_k=edgar_cfg.top_k,
             threshold=edgar_cfg.similarity_threshold,
-            query_templates=edgar_cfg.retrieval_query_templates,
+            query_templates=templates,
             retrieval_sections=edgar_cfg.retrieval_sections,
             embedder_model=app_config.llm.embedder_model,
         )
-        disclosure_block = build_disclosure_block(chunks)
+
+        disclosures_col = _disclosures_collection(ticker)
+
+        if not chunks:
+            # P2-05: empty retrieval — emit WARN and write Firestore marker doc.
+            logger.warning(
+                "EDGAR retrieval returned 0 chunks for %s in %s",
+                ticker,
+                run_id,
+            )
+            try:
+                await dao.set(
+                    disclosures_col,
+                    run_id,
+                    {
+                        "status": "empty_retrieval",
+                        "run_timestamp": run_timestamp,
+                        "attempted_query": attempted_query,
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to write empty_retrieval marker for ticker=%s run_id=%s",
+                    ticker,
+                    run_id,
+                )
+            return {"disclosure_block": None}
+
+        # P2-04: compute score stats for passing chunks.
+        scores = [c["_score"] for c in chunks if "_score" in c]
+        if scores:
+            min_score = min(scores)
+            max_score = max(scores)
+            mean_score = sum(scores) / len(scores)
+            logger.info(
+                "Retrieved %d chunks for %s (scores: %.2f–%.2f, mean=%.2f)",
+                len(chunks),
+                ticker,
+                min_score,
+                max_score,
+                mean_score,
+            )
+        else:
+            min_score = max_score = mean_score = 0.0
+            logger.info(
+                "Retrieved %d chunks for %s (no scores available)", len(chunks), ticker
+            )
+
+        # P2-04: write chunk observability doc to Firestore.
+        chunk_records = [
+            {
+                "text": c.get("text", ""),
+                "filing_type": c.get("filing_type", ""),
+                "filing_date": c.get("filing_date", ""),
+                "_score": c.get("_score"),
+            }
+            for c in chunks
+        ]
+        try:
+            await dao.set(
+                disclosures_col,
+                run_id,
+                {
+                    "status": "ok",
+                    "run_timestamp": run_timestamp,
+                    "chunk_count_passing_threshold": len(chunks),
+                    "min_score": round(min_score, 6),
+                    "max_score": round(max_score, 6),
+                    "mean_score": round(mean_score, 6),
+                    "max_disclosure_tokens": edgar_cfg.max_disclosure_tokens,
+                    "chunks": chunk_records,
+                },
+            )
+        except Exception:
+            logger.exception(
+                "Failed to write disclosure observability doc for ticker=%s run_id=%s",
+                ticker,
+                run_id,
+            )
+
+        # P2-06 + P2-09: build disclosure block with score annotations and token budget.
+        disclosure_block = build_disclosure_block(
+            chunks,
+            ticker=ticker,
+            max_tokens=edgar_cfg.max_disclosure_tokens,
+        )
 
         if disclosure_block:
             logger.debug(

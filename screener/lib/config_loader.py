@@ -242,6 +242,11 @@ class EdgarConfig(BaseModel):
     # Chunks whose ``section`` field matches an entry here receive +0.05 to
     # their similarity score.  Empty list disables boosting (default).
     retrieval_sections: list[str] = []
+    # P2-09: Token budget for injected disclosure context.  Chunks are dropped
+    # (lowest-scoring first) when the cumulative token count would exceed this
+    # value.  Set to 0 to disable the budget cap entirely.
+    # Default 2048 ≈ 4× top_k × 512-token chunks with headroom.
+    max_disclosure_tokens: int = 2048
 
     @field_validator("chunk_overlap")
     @classmethod
@@ -257,6 +262,13 @@ class EdgarConfig(BaseModel):
             raise ValueError(
                 f"edgar.similarity_threshold must be in [0.0, 1.0], got {v}"
             )
+        return v
+
+    @field_validator("max_disclosure_tokens")
+    @classmethod
+    def max_disclosure_tokens_must_be_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError(f"edgar.max_disclosure_tokens must be >= 0, got {v}")
         return v
 
 

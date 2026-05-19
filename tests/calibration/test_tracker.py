@@ -572,3 +572,221 @@ class TestRunCalibrationTracking:
             run_calibration_tracking(dao, "2026-05", window_months=3, dry_run=True)
         )
         assert result["months_with_data"] == 3
+
+
+# ---------------------------------------------------------------------------
+# CalibrationHistoryDoc writing (P3-06)
+# ---------------------------------------------------------------------------
+
+
+class TestCalibrationHistoryDoc:
+    """Tests for the history doc written by run_calibration_tracking (P3-06)."""
+
+    def test_history_doc_written_when_calibration_ok(self):
+        """When calibration is OK, history doc has delta_magnitude=0 and after==before."""
+        import asyncio
+
+        from screener.calibration.tracker import run_calibration_tracking
+        from screener.lib.storage.schema import (
+            CALIBRATION_HISTORY,
+            calibration_history_doc_id,
+            performance_doc_id,
+        )
+
+        get_values = {
+            performance_doc_id("2026-02", "judge"): _make_snapshot(
+                "2026-02", 8.0, 5.0, 2.0
+            ),
+            performance_doc_id("2026-03", "judge"): _make_snapshot(
+                "2026-03", 7.0, 4.0, 1.0
+            ),
+            performance_doc_id("2026-04", "judge"): _make_snapshot(
+                "2026-04", 9.0, 6.0, 3.0
+            ),
+        }
+        dao = _make_mock_dao(get_values)
+
+        result = asyncio.run(
+            run_calibration_tracking(dao, "2026-05", window_months=3, dry_run=False)
+        )
+
+        assert result["calibration_ok"] is True
+        assert result["history_doc_written"] is True
+
+        # Find the set() call for CALIBRATION_HISTORY.
+        history_calls = [
+            c for c in dao.set.call_args_list if c[0][0] == CALIBRATION_HISTORY
+        ]
+        assert len(history_calls) == 1
+        _, doc_id, payload = history_calls[0][0]
+        assert doc_id == calibration_history_doc_id("2026-05", "judge")
+        assert payload["calibration_ok"] is True
+        assert payload["delta_magnitude"] == pytest.approx(0.0)
+        assert payload["W1_after"] == pytest.approx(payload["W1_before"])
+
+    def test_history_doc_written_when_drift_detected(self):
+        """When drift is detected, history doc has delta_magnitude > 0 and after != before."""
+        import asyncio
+
+        from screener.calibration.tracker import run_calibration_tracking
+        from screener.lib.storage.schema import (
+            CALIBRATION_HISTORY,
+            performance_doc_id,
+        )
+
+        get_values = {
+            performance_doc_id("2026-02", "judge"): _make_snapshot(
+                "2026-02", 5.0, 4.8, 4.6
+            ),
+            performance_doc_id("2026-03", "judge"): _make_snapshot(
+                "2026-03", 5.0, 4.8, 4.6
+            ),
+            performance_doc_id("2026-04", "judge"): _make_snapshot(
+                "2026-04", 5.0, 4.8, 4.6
+            ),
+        }
+        dao = _make_mock_dao(get_values)
+
+        result = asyncio.run(
+            run_calibration_tracking(dao, "2026-05", window_months=3, dry_run=False)
+        )
+
+        assert result["calibration_ok"] is False
+        assert result["history_doc_written"] is True
+
+        history_calls = [
+            c for c in dao.set.call_args_list if c[0][0] == CALIBRATION_HISTORY
+        ]
+        assert len(history_calls) == 1
+        _, _, payload = history_calls[0][0]
+        assert payload["calibration_ok"] is False
+        assert payload["delta_magnitude"] > 0.0
+        assert payload["W1_after"] != pytest.approx(payload["W1_before"])
+
+    def test_dry_run_skips_history_write(self):
+        """With dry_run=True, the history doc is NOT written (dao.set not called at all)."""
+        import asyncio
+
+        from screener.calibration.tracker import run_calibration_tracking
+        from screener.lib.storage.schema import (
+            CALIBRATION_HISTORY,
+            performance_doc_id,
+        )
+
+        get_values = {
+            performance_doc_id("2026-02", "judge"): _make_snapshot(
+                "2026-02", 8.0, 5.0, 2.0
+            ),
+            performance_doc_id("2026-03", "judge"): _make_snapshot(
+                "2026-03", 7.0, 4.0, 1.0
+            ),
+            performance_doc_id("2026-04", "judge"): _make_snapshot(
+                "2026-04", 9.0, 6.0, 3.0
+            ),
+        }
+        dao = _make_mock_dao(get_values)
+
+        result = asyncio.run(
+            run_calibration_tracking(dao, "2026-05", window_months=3, dry_run=True)
+        )
+
+        assert result["history_doc_written"] is False
+
+        history_calls = [
+            c for c in dao.set.call_args_list if c[0][0] == CALIBRATION_HISTORY
+        ]
+        assert len(history_calls) == 0
+
+
+# ---------------------------------------------------------------------------
+# run_calibration_trend_report (P3-07)
+# ---------------------------------------------------------------------------
+
+
+def _make_history_doc(
+    month_id: str,
+    delta_magnitude: float,
+    calibration_ok: bool,
+    drift_flags_count: int = 0,
+) -> dict:
+    """Build a minimal CalibrationHistoryDoc dict for use in trend-report tests."""
+    return {
+        "month_id": month_id,
+        "source": "judge",
+        "W1_before": 0.40,
+        "W1_after": 0.40 - delta_magnitude / 3,
+        "W2_before": 0.35,
+        "W2_after": 0.35 + delta_magnitude / 3,
+        "W3_before": 0.25,
+        "W3_after": 0.25,
+        "delta_magnitude": delta_magnitude,
+        "drift_flags_count": drift_flags_count,
+        "calibration_ok": calibration_ok,
+        "timestamp": "2026-05-01T00:00:00+00:00",
+    }
+
+
+class TestRunCalibrationTrendReport:
+    """Tests for run_calibration_trend_report (P3-07)."""
+
+    def test_trend_report_empty(self):
+        """When no history docs exist, the report has zeroed-out / None fields."""
+        import asyncio
+
+        from screener.calibration.tracker import run_calibration_trend_report
+
+        dao = _make_mock_dao({})
+        result = asyncio.run(
+            run_calibration_trend_report(dao, n_months=3, source="judge")
+        )
+
+        assert result["months_queried"] == 3
+        assert result["months_with_data"] == 0
+        assert result["calibration_ok_count"] == 0
+        assert result["calibration_ok_rate"] is None
+        assert result["avg_drift_flags"] is None
+        assert result["weight_delta_trend"] == []
+
+    def test_trend_report_with_data(self):
+        """With mock history docs, correct calibration_ok_rate and sorted trend returned."""
+        import asyncio
+
+        from screener.calibration.tracker import run_calibration_trend_report
+        from screener.lib.storage.schema import calibration_history_doc_id
+
+        # Provide two months of history: one ok, one with drift.
+        get_values = {
+            calibration_history_doc_id("2026-03", "judge"): _make_history_doc(
+                "2026-03", delta_magnitude=0.0, calibration_ok=True, drift_flags_count=0
+            ),
+            calibration_history_doc_id("2026-04", "judge"): _make_history_doc(
+                "2026-04",
+                delta_magnitude=0.1,
+                calibration_ok=False,
+                drift_flags_count=2,
+            ),
+        }
+        dao = _make_mock_dao(get_values)
+
+        # Query 3 months — one will be missing (2026-05 has no doc in this window
+        # because n_months=3 starting from the current month 2026-05 covers
+        # 2026-03, 2026-04, 2026-05).
+        result = asyncio.run(
+            run_calibration_trend_report(dao, n_months=3, source="judge")
+        )
+
+        assert result["months_queried"] == 3
+        assert result["months_with_data"] == 2
+        assert result["calibration_ok_count"] == 1
+        assert result["calibration_ok_rate"] == pytest.approx(0.5)
+        assert result["avg_drift_flags"] == pytest.approx(1.0)  # (0 + 2) / 2
+
+        # Trend is sorted chronologically.
+        trend = result["weight_delta_trend"]
+        assert len(trend) == 2
+        assert trend[0]["month_id"] == "2026-03"
+        assert trend[1]["month_id"] == "2026-04"
+        assert trend[0]["delta_magnitude"] == pytest.approx(0.0)
+        assert trend[1]["delta_magnitude"] == pytest.approx(0.1)
+        assert trend[0]["calibration_ok"] is True
+        assert trend[1]["calibration_ok"] is False

@@ -18,8 +18,9 @@ export_pick_history(dao, format, output_path, source, months) -> str
 
 CLI modes (via subcommand)
 --------------------------
-  picks        Export pick history to CSV or JSON (original mode).
-  eval-trend   Print a JSON summary of the last N months of eval trend data.
+  picks              Export pick history to CSV or JSON (original mode).
+  eval-trend         Print a JSON summary of the last N months of eval trend data.
+  calibration-trend  Print a JSON summary of the last N months of calibration history.
 """
 
 from __future__ import annotations
@@ -188,7 +189,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
     parser = argparse.ArgumentParser(
-        description="Export pick ledger history or eval trend data."
+        description="Export pick ledger history, eval trend data, or calibration trend data."
     )
     subparsers = parser.add_subparsers(dest="report", metavar="REPORT")
     subparsers.required = False  # default to "picks" mode when omitted
@@ -236,6 +237,24 @@ if __name__ == "__main__":
         help="Number of trailing months to query (default: 12)",
     )
 
+    # ---- calibration-trend subcommand (P3-07) -------------------------------
+    cal_trend_parser = subparsers.add_parser(
+        "calibration-trend",
+        help="Print a JSON summary of the last N months of calibration weight history.",
+    )
+    cal_trend_parser.add_argument(
+        "--months",
+        type=int,
+        default=12,
+        metavar="N",
+        help="Number of trailing months to query (default: 12)",
+    )
+    cal_trend_parser.add_argument(
+        "--source",
+        default="judge",
+        help="Agent source to query (default: judge)",
+    )
+
     args = parser.parse_args()
 
     from screener.lib.config_loader import load_config
@@ -271,6 +290,16 @@ if __name__ == "__main__":
 
         _n_months = getattr(args, "months", 12)
         _result = asyncio.run(run_eval_trend_report(_dao, n_months=_n_months))
+        print(json.dumps(_result, indent=2))
+
+    elif _report_mode == "calibration-trend":
+        from screener.calibration.tracker import run_calibration_trend_report
+
+        _n_months = getattr(args, "months", 12)
+        _source = getattr(args, "source", "judge")
+        _result = asyncio.run(
+            run_calibration_trend_report(_dao, n_months=_n_months, source=_source)
+        )
         print(json.dumps(_result, indent=2))
 
     sys.exit(0)

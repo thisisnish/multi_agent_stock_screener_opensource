@@ -737,3 +737,49 @@ class EvalTrendDoc(BaseModel):
     avg_citation_density: Optional[float] = None
     avg_argument_structure: Optional[float] = None
     run_ts: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+# ---------------------------------------------------------------------------
+# Calibration history schema (P3-06)
+# ---------------------------------------------------------------------------
+
+CALIBRATION_HISTORY: str = "calibration_history"
+
+
+def calibration_history_doc_id(month_id: str, source: str = "judge") -> str:
+    """Doc ID for a calibration history document in the ``calibration_history`` collection.
+
+    Args:
+        month_id: Month identifier in ``"YYYY-MM"`` format, e.g. ``"2026-04"``.
+        source: Agent source; defaults to ``"judge"``.
+
+    Returns:
+        e.g. ``"history_2026-04_judge"``
+    """
+    return f"history_{month_id}_{source}"
+
+
+class CalibrationHistoryDoc(BaseModel):
+    """Per-month calibration weight adjustment history.
+
+    Written on every successful calibration run (both ok and drift cases) to
+    maintain a gap-free time series of weight changes.
+
+    Doc ID: ``history_{MONTH_ID}_{source}`` (e.g. ``"history_2026-04_judge"``).
+    Firestore path: ``calibration_history/history_2026-04_judge``.
+    """
+
+    month_id: str
+    source: str
+    W1_before: float
+    W1_after: float
+    W2_before: float
+    W2_after: float
+    W3_before: float
+    W3_after: float
+    delta_magnitude: (
+        float  # |W1_after-W1_before| + |W2_after-W2_before| + |W3_after-W3_before|
+    )
+    drift_flags_count: int
+    calibration_ok: bool
+    timestamp: str  # ISO UTC from datetime.now(timezone.utc).isoformat()

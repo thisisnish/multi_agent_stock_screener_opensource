@@ -9,17 +9,22 @@ is detected.
 Public API
 ----------
 run_calibration_tracking(dao, month_id, window_months=12, source="judge", dry_run=False) -> dict
+run_calibration_trend_report(dao, n_months=12, source="judge") -> dict
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from screener.lib.storage.schema import (
     CALIBRATION,
+    CALIBRATION_HISTORY,
     PERFORMANCE,
+    CalibrationHistoryDoc,
     CalibrationReportDoc,
     WeightOverrideDoc,
+    calibration_history_doc_id,
     calibration_report_doc_id,
     performance_doc_id,
     weight_override_doc_id,
@@ -386,15 +391,33 @@ async def run_calibration_tracking(
             len(drift_flags),
         )
 
+    # Read existing override doc to get before-weights for history tracking.
+    existing_override = await dao.get(CALIBRATION, weight_override_doc_id(source))
+    if existing_override is not None:
+        w1_before = existing_override["W1_margin"]
+        w2_before = existing_override["W2_unique_sources"]
+        w3_before = existing_override["W3_hedge"]
+    else:
+        w1_before = _DEFAULT_WEIGHTS["W1_margin"]
+        w2_before = _DEFAULT_WEIGHTS["W2_unique_sources"]
+        w3_before = _DEFAULT_WEIGHTS["W3_hedge"]
+
     weight_result: dict = {}
+    w1_after = w1_before
+    w2_after = w2_before
+    w3_after = w3_before
+
     if not calibration_ok:
         adjustments = _compute_weight_adjustments(drift_flags)
         if adjustments:
+            w1_after = adjustments["W1_margin"]
+            w2_after = adjustments["W2_unique_sources"]
+            w3_after = adjustments["W3_hedge"]
             override_doc = WeightOverrideDoc(
                 source=source,
-                W1_margin=adjustments["W1_margin"],
-                W2_unique_sources=adjustments["W2_unique_sources"],
-                W3_hedge=adjustments["W3_hedge"],
+                W1_margin=w1_after,
+                W2_unique_sources=w2_after,
+                W3_hedge=w3_after,
                 reason=adjustments["reason"],
             )
             if not dry_run:
@@ -405,21 +428,129 @@ async def run_calibration_tracking(
                 )
                 logger.info(
                     "wrote weight override doc — W1=%.4f W2=%.4f W3=%.4f",
-                    adjustments["W1_margin"],
-                    adjustments["W2_unique_sources"],
-                    adjustments["W3_hedge"],
+                    w1_after,
+                    w2_after,
+                    w3_after,
                 )
             weight_result = {
                 "weight_override_written": not dry_run,
-                "W1_margin": adjustments["W1_margin"],
-                "W2_unique_sources": adjustments["W2_unique_sources"],
-                "W3_hedge": adjustments["W3_hedge"],
+                "W1_margin": w1_after,
+                "W2_unique_sources": w2_after,
+                "W3_hedge": w3_after,
             }
+
+    delta_magnitude = (
+        abs(w1_after - w1_before)
+        + abs(w2_after - w2_before)
+        + abs(w3_after - w3_before)
+    )
+    history_doc = CalibrationHistoryDoc(
+        month_id=month_id,
+        source=source,
+        W1_before=w1_before,
+        W1_after=w1_after,
+        W2_before=w2_before,
+        W2_after=w2_after,
+        W3_before=w3_before,
+        W3_after=w3_after,
+        delta_magnitude=delta_magnitude,
+        drift_flags_count=len(drift_flags),
+        calibration_ok=calibration_ok,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+    if not dry_run:
+        await dao.set(
+            CALIBRATION_HISTORY,
+            calibration_history_doc_id(month_id, source),
+            history_doc.model_dump(mode="json"),
+        )
+        logger.info(
+            "wrote calibration history doc — month=%s delta=%.4f ok=%s",
+            month_id,
+            delta_magnitude,
+            calibration_ok,
+        )
 
     return {
         "status": "success",
         "calibration_ok": calibration_ok,
         "drift_flags": drift_flags,
         "months_with_data": months_with_data,
+        "history_doc_written": not dry_run,
         **weight_result,
+    }
+
+
+async def run_calibration_trend_report(
+    dao,
+    n_months: int = 12,
+    source: str = "judge",
+) -> dict:
+    """Generate a trend report from the last ``n_months`` of calibration history docs.
+
+    Queries ``calibration_history`` for the last ``n_months`` including the
+    current month and summarises convergence / oscillation signals.
+
+    Args:
+        dao: StorageDAO instance.
+        n_months: Number of months to include, counting back from the current month.
+        source: Agent source label (e.g. ``"judge"``).
+
+    Returns:
+        Dict with keys: ``months_queried``, ``months_with_data``,
+        ``calibration_ok_count``, ``calibration_ok_rate``, ``avg_drift_flags``,
+        ``weight_delta_trend``.
+    """
+    now = datetime.now(timezone.utc)
+    current_year = now.year
+    current_month = now.month
+
+    # Build month IDs for the last n_months INCLUDING the current month.
+    month_ids: list[str] = []
+    for i in range(n_months - 1, -1, -1):
+        total = current_year * 12 + current_month - 1 - i
+        y = total // 12
+        m = total % 12 + 1
+        month_ids.append(f"{y:04d}-{m:02d}")
+
+    docs: list[dict] = []
+    for mid in month_ids:
+        doc = await dao.get(
+            CALIBRATION_HISTORY, calibration_history_doc_id(mid, source)
+        )
+        if doc is not None:
+            docs.append(doc)
+
+    months_with_data = len(docs)
+    calibration_ok_count = sum(1 for d in docs if d.get("calibration_ok") is True)
+
+    calibration_ok_rate: float | None = None
+    if months_with_data > 0:
+        calibration_ok_rate = calibration_ok_count / months_with_data
+
+    avg_drift_flags: float | None = None
+    if months_with_data > 0:
+        avg_drift_flags = (
+            sum(d.get("drift_flags_count", 0) for d in docs) / months_with_data
+        )
+
+    weight_delta_trend = sorted(
+        [
+            {
+                "month_id": d["month_id"],
+                "delta_magnitude": d.get("delta_magnitude", 0.0),
+                "calibration_ok": d.get("calibration_ok", True),
+            }
+            for d in docs
+        ],
+        key=lambda x: x["month_id"],
+    )
+
+    return {
+        "months_queried": len(month_ids),
+        "months_with_data": months_with_data,
+        "calibration_ok_count": calibration_ok_count,
+        "calibration_ok_rate": calibration_ok_rate,
+        "avg_drift_flags": avg_drift_flags,
+        "weight_delta_trend": weight_delta_trend,
     }

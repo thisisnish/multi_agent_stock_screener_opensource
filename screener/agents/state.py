@@ -29,6 +29,8 @@ class DebateState(TypedDict, total=False):
         memory_doc: Raw dict for the current month from the memory subcollection, or None.
         scoring_weights: Adaptive bull/bear weights from episodic memory, or None.
         prior_months: Dict of {month_id: MonthVerdict-like dict} from past memory docs.
+        adaptive_weights_active: True when compute_adaptive_weights returned non-None
+            (i.e. enough scored history existed to override the default 50/50 weights).
 
     build_context outputs:
         disclosure_block: Formatted EDGAR disclosure text or None.
@@ -66,6 +68,7 @@ class DebateState(TypedDict, total=False):
     memory_doc: Optional[dict]
     scoring_weights: Optional[dict]
     prior_months: dict  # {month_id: WeekVerdict-like dict}
+    adaptive_weights_active: bool  # True when compute_adaptive_weights returned non-None
 
     # --- build_context outputs ---
     disclosure_block: Optional[str]

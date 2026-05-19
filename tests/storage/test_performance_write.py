@@ -1070,3 +1070,148 @@ class TestBuildPerformanceSnapshotTierStats:
         assert snap["high_tier_count"] == 2
         assert snap["high_win_rate"] == pytest.approx(1.0)
         assert snap["high_avg_return_pct"] == pytest.approx(12.0)
+
+
+# ---------------------------------------------------------------------------
+# P3-08: Adaptive cohort flag tests
+# ---------------------------------------------------------------------------
+
+
+class TestAdaptiveWeightsFlagOnLedgerEntry:
+    """build_pick_ledger_entries propagates adaptive_weights_active from verdict."""
+
+    _PICKS = [
+        {"symbol": "AAPL", "price": 175.0},
+        {"symbol": "MSFT", "price": 420.0},
+    ]
+
+    def test_adaptive_flag_true_when_verdict_has_it(self):
+        from screener.performance.tracker import build_pick_ledger_entries
+
+        entries = build_pick_ledger_entries(
+            verdicts=[
+                {
+                    "ticker": "AAPL",
+                    "final_action": "BUY",
+                    "confidence_score": 72.0,
+                    "adaptive_weights_active": True,
+                }
+            ],
+            picks=self._PICKS,
+            month_id="2026-04",
+            entry_spy_price=520.0,
+        )
+        assert entries[0]["adaptive_weights_active"] is True
+
+    def test_adaptive_flag_false_when_absent_from_verdict(self):
+        from screener.performance.tracker import build_pick_ledger_entries
+
+        entries = build_pick_ledger_entries(
+            verdicts=[
+                {
+                    "ticker": "MSFT",
+                    "final_action": "BUY",
+                    "confidence_score": 65.0,
+                    # adaptive_weights_active intentionally omitted
+                }
+            ],
+            picks=self._PICKS,
+            month_id="2026-04",
+            entry_spy_price=520.0,
+        )
+        assert entries[0]["adaptive_weights_active"] is False
+
+    def test_adaptive_flag_false_when_explicitly_false(self):
+        from screener.performance.tracker import build_pick_ledger_entries
+
+        entries = build_pick_ledger_entries(
+            verdicts=[
+                {
+                    "ticker": "AAPL",
+                    "final_action": "BUY",
+                    "confidence_score": 72.0,
+                    "adaptive_weights_active": False,
+                }
+            ],
+            picks=self._PICKS,
+            month_id="2026-04",
+            entry_spy_price=520.0,
+        )
+        assert entries[0]["adaptive_weights_active"] is False
+
+
+class TestBuildPerformanceSnapshotAdaptiveCohort:
+    """build_performance_snapshot computes adaptive vs default cohort win rates."""
+
+    def _make_entry(
+        self,
+        adaptive: bool,
+        beat_spy: Optional[bool] = None,
+        status: str = "active",
+    ) -> dict:
+        return {
+            "ticker": "X",
+            "status": status,
+            "adaptive_weights_active": adaptive,
+            "beat_spy": beat_spy,
+        }
+
+    def test_cohort_counts_split_correctly(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        entries = [
+            self._make_entry(True),
+            self._make_entry(True),
+            self._make_entry(False),
+        ]
+        snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
+        assert snap["adaptive_picks_count"] == 2
+        assert snap["default_picks_count"] == 1
+
+    def test_adaptive_win_rate_computed_from_closed(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        entries = [
+            self._make_entry(True, beat_spy=True, status="closed"),
+            self._make_entry(True, beat_spy=False, status="closed"),
+            self._make_entry(True, beat_spy=True, status="closed"),
+            self._make_entry(False, beat_spy=True, status="closed"),
+        ]
+        snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
+        # adaptive: 2/3 beat SPY
+        assert snap["adaptive_win_rate"] == pytest.approx(2 / 3)
+        # default: 1/1 beat SPY
+        assert snap["default_win_rate"] == pytest.approx(1.0)
+
+    def test_all_default_gives_none_adaptive_win_rate(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        entries = [
+            self._make_entry(False, beat_spy=True, status="closed"),
+            self._make_entry(False, beat_spy=False, status="closed"),
+        ]
+        snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
+        assert snap["adaptive_picks_count"] is None
+        assert snap["adaptive_win_rate"] is None
+        assert snap["default_picks_count"] == 2
+        assert snap["default_win_rate"] == pytest.approx(0.5)
+
+    def test_no_closed_entries_both_win_rates_none(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        entries = [
+            self._make_entry(True),   # active, beat_spy=None
+            self._make_entry(False),  # active, beat_spy=None
+        ]
+        snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
+        assert snap["adaptive_win_rate"] is None
+        assert snap["default_win_rate"] is None
+
+    def test_empty_ledger_gives_none_cohort_fields(self):
+        from screener.performance.tracker import build_performance_snapshot
+
+        snap = build_performance_snapshot("2026-04", [], entry_spy_price=None)
+        assert snap["adaptive_picks_count"] is None
+        assert snap["default_picks_count"] is None
+        assert snap["adaptive_win_rate"] is None
+        assert snap["default_win_rate"] is None

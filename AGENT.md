@@ -48,7 +48,7 @@ memory_read → build_context → debate_node → conviction_node
 
 | Node | Type | Description |
 |------|------|-------------|
-| `memory_read` | async I/O | Read per-ticker verdict history; compute adaptive bull/bear weights from scored prior months |
+| `memory_read` | async I/O | Read per-ticker verdict history; compute adaptive bull/bear weights from scored prior months; set `adaptive_weights_active=true` if ≥4 scored months exist, `false` otherwise |
 | `build_context` | async I/O | Vector-search EDGAR chunks (section-aware boosting, dedup); write per-run observability to Firestore (chunk scores, empty-retrieval markers); build disclosure block with token budget enforcement |
 | `debate_node` | LLM × 2 (parallel) | Bull + Bear run simultaneously via `asyncio.gather` |
 | `conviction_node` | white-box | Source diversity + hedge penalty score for Bull and Bear; scales by adaptive weights when ≥4 scored months |
@@ -104,10 +104,12 @@ All collections live in one logical database: `multi-agent-stock-screener`.
 | `analysis/{TICKER}_{MONTH_ID}` | `AAPL_2026-04` | Cached debate output |
 | `signals/{TICKER}_{MONTH_ID}` | `AAPL_2026-04` | Quarterly fundamentals |
 | `picks/{TICKER}_{MONTH_ID}_{source}` | `AAPL_2026-04_judge` | Unified pick ledger |
-| `performance/{MONTH_ID}_{source}` | `2026-04_judge` | Win rate, alpha, bull/bear accuracy |
+| `performance/{MONTH_ID}_{source}` | `2026-04_judge` | Win rate, alpha, bull/bear/adaptive accuracy; `adaptive_picks_count`, `default_picks_count`, `adaptive_win_rate`, `default_win_rate` |
 | `chunks/{DOC_ID}` | sha256 hash | EDGAR vector chunks (includes `section`, `embedder_model` fields) |
 | `analysis/{TICKER}/disclosures/{run_id}` | ISO timestamp | Per-run EDGAR retrieval observability: chunk scores (min/max/mean), dedup dropped count, empty-retrieval marker |
 | `eval/{MONTH_ID}` | `2026-04` | Monthly quality metrics + acid test |
+| `calibration_history/{month_id}_{source}` | `history_2026-04_judge` | Per-run weight adjustment history: `W1_before/after`, `W2_before/after`, `W3_before/after`, `delta_magnitude`, `drift_flags_count`, `calibration_ok` |
+| `eval_trend/{MONTH_ID}` | `2026-04` | Monthly eval metrics time series: confidence tier accuracy, `confidence_gap`, `confidence_calibration`, rubric sub-scores |
 | `calibration/{Nm_source}` | `12m_judge` | Rolling N-month calibration report (High>Med>Low check) |
 | `calibration/weights_{source}` | `weights_judge` | Recommended confidence weight overrides; written when calibration drifts |
 | `events/{ID}` | uuid | Event log |
@@ -131,15 +133,49 @@ MA200 gate: score × 1.0 if price > MA200, × 0.5 if below.
 
 ## Eval Pipeline
 
-Runs monthly (Step 4). Scores prior month's picks on decision quality (0–100) using an LLM rubric. Outputs:
+Runs monthly (Step 4). Scores prior month's picks on decision quality (0–100) using mathematical confidence metrics. Outputs to `eval/{MONTH_ID}`:
 - Overall accuracy, bull accuracy, bear accuracy, directional bias
 - Confidence calibration (do high-confidence picks beat low-confidence?)
 - Acid test: max drawdown by confidence tier (High ≥70 / Med 40–69 / Low <40)
 - Disclosure citation rate (% of analyses that cited SEC filings)
 
+Optional: Set `eval.rubric_sample_rate: 0.0–1.0` in config (default 0). When > 0, randomly samples `ceil(len(picks) × rubric_sample_rate)` picks and scores them with the LLM rubric. Averaged sub-scores (`rubric_sample_count`, `avg_reasoning_quality`, `avg_citation_density`, `avg_argument_structure`) are written to `EvalTrendDoc`.
+
+After eval completes, an `EvalTrendDoc` is written to `eval_trend/{MONTH_ID}` with the full monthly metrics snapshot: `overall_accuracy`, `bull_accuracy`, `bear_accuracy`, confidence tier accuracies, `confidence_gap` (high-confidence minus low-confidence accuracy), `confidence_calibration` (gap between avg stated confidence and overall accuracy), `directional_bias`, `disclosure_citation_rate`, `avg_score`, and rubric sub-scores (if sampled).
+
 Eval output feeds back into the Judge prompt next month as `eval_context`.
 
-**Rolling calibration tracker** — also runs after each eval. Reads the last 12 months of `PerformanceSnapshotDoc` records, aggregates per-tier alpha and win-rate, and checks that High > Med > Low holds by at least a 2pp gap. Results written to `calibration/12m_judge`. If the ordering is violated, recommended weight adjustments are written to `calibration/weights_judge` and picked up by `screener_job` on its next run.
+**Rolling calibration tracker** — also runs after each eval. On every run, writes a `CalibrationHistoryDoc` to `calibration_history/{month_id}_{source}` (gap-free time series). Reads the last 12 months of `PerformanceSnapshotDoc` records, aggregates per-tier alpha and win-rate, and checks that High > Med > Low holds by at least a 2pp gap. Results written to `calibration/12m_judge`. If the ordering is violated, recommended weight adjustments are written to `calibration/weights_judge` and picked up by `screener_job` on its next run. History doc captures before/after weight values (`W1_before/after`, `W2_before/after`, `W3_before/after`), delta magnitude, drift flag count, and calibration status.
+
+---
+
+## Loop Effectiveness Telemetry
+
+The eval and calibration loops produce structured telemetry enabling direct measurement of system improvement over time.
+
+**Three data sources:**
+
+1. **Calibration History** (`calibration_history/{month_id}_{source}`) — written on every eval run (gap-free time series). Fields: `W1_before/after`, `W2_before/after`, `W3_before/after`, `delta_magnitude` (sum of absolute weight deltas), `drift_flags_count`, `calibration_ok` (bool), `timestamp`. When `calibration_ok=true`, `delta_magnitude=0`; when drift is detected and corrected, `delta_magnitude>0`.
+
+2. **Eval Trend** (`eval_trend/{MONTH_ID}`) — written after each eval run. Includes `overall_accuracy`, per-tier accuracy (`high_confidence_accuracy`, `medium_confidence_accuracy`, `low_confidence_accuracy`), `confidence_gap` (high minus low tier accuracy), `confidence_calibration` (stated confidence vs actual accuracy), rubric sub-scores if sampling is enabled, and `avg_score`.
+
+3. **Adaptive Weights Cohort** (per-pick `adaptive_weights_active` on `PickLedgerDoc`, aggregated in `PerformanceSnapshotDoc` as `adaptive_win_rate` vs `default_win_rate`) — tracks whether picks made with per-ticker adaptive weights beat default 50/50 splits.
+
+**Interpreting the signals:**
+
+- **Calibration convergence**: Query `calibration_history/` for the last 12 months. If `delta_magnitude` is shrinking over time, the confidence weight loop is settling. If deltas remain large and constant, the system is unstable (likely misaligned confidence model).
+
+- **Confidence discrimination**: Query `eval_trend/` for the last 12 months. A healthy `confidence_gap` (high-confidence picks beating low-confidence by >10pp) indicates strong tier discrimination. If the gap is shrinking, the confidence model is losing predictive power.
+
+- **Confidence calibration**: Check `confidence_calibration` (gap between average stated confidence and overall accuracy). This should shrink over time. A large positive gap means the system is overconfident; negative means underconfident.
+
+- **Adaptive weight effectiveness**: Compare `adaptive_win_rate` to `default_win_rate` in `PerformanceSnapshotDoc`. If adaptive > default consistently, the per-ticker learning loop is working. If they converge, the loop may not have enough history yet (< 4 scored months per ticker).
+
+**CLI queries** (see README for full syntax):
+```
+python -m screener.lib.exporter calibration-trend --months 12
+python -m screener.lib.exporter eval-trend --months 12
+```
 
 ---
 
@@ -155,3 +191,5 @@ Eval output feeds back into the Judge prompt next month as `eval_context`.
 - **Embedder drift detection**: `index_ticker()` stamps `embedder_model` on every chunk doc and the freshness sentinel. If `llm.embedder_model` changes in config, the next run detects the mismatch and forces a full re-index for that ticker.
 - **Section-aware retrieval**: Chunks are tagged with their 10-K/10-Q section heading at index time. Sections listed in `edgar.retrieval_sections` receive a +0.05 cosine score boost during retrieval. Empty list (default) disables boosting.
 - **Disclosure token budget**: Chunks are dropped lowest-score-first when the cumulative token count would exceed `edgar.max_disclosure_tokens` (default 2048). Set to 0 to disable. Injection counts are logged at INFO level per run.
+- **Calibration history append-only**: `calibration_history/{month_id}_{source}` is written on every eval run without gaps, even when `calibration_ok=true` (delta_magnitude=0 in those cases). This preserves a continuous time series for trend analysis.
+- **Adaptive weights tagging**: Every `PickLedgerDoc` includes `adaptive_weights_active: bool`, set by `memory_read` node based on whether ≥4 scored months exist for the ticker. Enables downstream cohort analysis of adaptive vs default weight effectiveness.

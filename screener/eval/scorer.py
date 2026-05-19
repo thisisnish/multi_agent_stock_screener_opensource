@@ -215,3 +215,55 @@ Score this pick according to the rubric. Populate all fields of ScoreResult.
         result.bear_accuracy = beat_spy if decision == "SELL" else None
 
     return result
+
+
+def score_picks_llm(
+    picks: list[dict],
+    app_config: "AppConfig",
+) -> list["ScoreResult"]:
+    """LLM rubric scoring for a list of picks.
+
+    Calls ``score_judge_pick()`` sequentially for each pick.  Picks missing
+    required fields (ticker, action) are skipped with a warning.  Each call
+    costs one LLM inference; keep ``picks`` small (use a sampled subset).
+
+    This is a synchronous function -- it runs each LLM call in the current
+    thread and is safe to call from both sync and async contexts.
+
+    Args:
+        picks: List of raw pick dicts, each with at minimum ``ticker``,
+               ``action``, ``entry_date``, ``entry_price``, and
+               ``confidence_score`` fields.
+        app_config: AppConfig instance for LLM routing.
+
+    Returns:
+        List of ScoreResult objects, one per successfully scored pick.
+        Picks with missing required fields are silently skipped.
+    """
+    results: list[ScoreResult] = []
+    for pick in picks:
+        ticker = pick.get("ticker")
+        action = pick.get("action", "HOLD")
+        if not ticker or action == "HOLD":
+            logger.debug("score_picks_llm: skipping pick without ticker or HOLD action")
+            continue
+        try:
+            result = score_judge_pick(
+                ticker=ticker,
+                decision=action,
+                entry_date=pick.get("entry_date") or pick.get("entry_month") or "",
+                entry_price=pick.get("entry_price") or 0.0,
+                exit_date=pick.get("exit_date"),
+                exit_price=pick.get("exit_price"),
+                confidence=pick.get("confidence_score") or 50.0,
+                rationale=pick.get("judge_reasoning") or "",
+                app_config=app_config,
+                spy_return=pick.get("spy_return_pct"),
+            )
+            results.append(result)
+        except Exception:
+            logger.exception(
+                "score_picks_llm: failed to score pick for %s -- skipping", ticker
+            )
+    return results
+

@@ -52,6 +52,7 @@ SCREENINGS: str = "screenings"
 ANALYSIS: str = "analysis"
 CHUNKS: str = "chunks"
 EVAL: str = "eval"
+EVAL_TREND: str = "eval_trend"
 EVENTS: str = "events"
 CALIBRATION: str = "calibration"
 
@@ -679,3 +680,55 @@ class WeightOverrideDoc(BaseModel):
     W2_unique_sources: float
     W3_hedge: float
     reason: str
+
+
+# ---------------------------------------------------------------------------
+# Eval trend schema (P3-09)
+# ---------------------------------------------------------------------------
+
+
+def eval_trend_doc_id(period: str) -> str:
+    """Doc ID for a monthly eval-trend document.
+
+    Args:
+        period: Month identifier in ``"YYYY-MM"`` format, e.g. ``"2026-04"``.
+
+    Returns:
+        The period string unchanged, e.g. ``"2026-04"``.
+    """
+    return period
+
+
+class EvalTrendDoc(BaseModel):
+    """Per-month eval metrics persisted for longitudinal trend analysis.
+
+    Written by the eval orchestrator after each successful eval run.
+    Stored in the ``eval_trend`` collection with doc ID = ``period``.
+
+    Doc ID: ``{PERIOD}`` (e.g. ``"2026-04"``).
+    Firestore path: ``eval_trend/2026-04``.
+
+    P3-10 rubric fields (``rubric_sample_count``, ``avg_reasoning_quality``,
+    ``avg_citation_density``, ``avg_argument_structure``) are ``None`` until
+    ``eval.rubric_sample_rate > 0.0`` is set in config.
+    """
+
+    period: str
+    overall_accuracy: Optional[float] = None
+    bull_accuracy: Optional[float] = None
+    bear_accuracy: Optional[float] = None
+    high_confidence_accuracy: Optional[float] = None
+    medium_confidence_accuracy: Optional[float] = None
+    low_confidence_accuracy: Optional[float] = None
+    confidence_calibration: Optional[float] = None  # |avg_confidence - overall_accuracy|
+    confidence_gap: Optional[float] = None  # high_conf_accuracy - low_conf_accuracy
+    avg_score: Optional[float] = None
+    directional_bias: Optional[str] = None
+    disclosure_citation_rate: Optional[float] = None
+    # P3-10 fields -- None until rubric sampling is enabled
+    rubric_sample_count: Optional[int] = None
+    avg_reasoning_quality: Optional[float] = None
+    avg_citation_density: Optional[float] = None
+    avg_argument_structure: Optional[float] = None
+    run_ts: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+

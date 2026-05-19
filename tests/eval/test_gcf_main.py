@@ -363,13 +363,18 @@ class TestRunEvalMainWritePath:
         dao.set = AsyncMock()
         return dao
 
-    def test_calls_dao_set_once_for_eval_doc(self):
+    def test_calls_dao_set_twice_for_eval_and_trend_docs(self):
+        """P3-09: dry_run=False triggers two writes: EVAL_TREND and EVAL."""
         from gcf.eval.main import run_eval_main
+        from screener.lib.storage.schema import EVAL, EVAL_TREND
 
         picks = [_make_closed_pick(beat_spy=True), _make_closed_pick(beat_spy=False)]
         dao = self._make_mock_dao(picks)
         run_eval_main(_make_app_config(), dao, "2026-03", dry_run=False)
-        dao.set.assert_called_once()
+        assert dao.set.call_count == 2
+        collections_written = [c[0][0] for c in dao.set.call_args_list]
+        assert EVAL_TREND in collections_written
+        assert EVAL in collections_written
 
     def test_dao_set_writes_to_eval_collection(self):
         from gcf.eval.main import run_eval_main

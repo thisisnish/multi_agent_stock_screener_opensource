@@ -272,6 +272,28 @@ class EdgarConfig(BaseModel):
         return v
 
 
+
+class EvalConfig(BaseModel):
+    """Evaluation run settings (P3-10: rubric sample scoring)."""
+
+    rubric_sample_rate: float = 0.0
+    """Fraction of picks to score via the LLM rubric each eval run.
+
+    Must be in [0.0, 1.0].  Defaults to 0.0 (disabled).  Set to 1.0 to
+    score all picks; 0.1 to sample ~10 %.  Costs one LLM call per sampled
+    pick, so keep low in production until cost is understood.
+    """
+
+    @field_validator("rubric_sample_rate")
+    @classmethod
+    def rubric_sample_rate_must_be_fraction(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(
+                f"eval.rubric_sample_rate must be in [0.0, 1.0], got {v}"
+            )
+        return v
+
+
 class AppConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -279,6 +301,7 @@ class AppConfig(BaseModel):
     screener: ScreenerConfig = Field(default_factory=ScreenerConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     edgar: EdgarConfig = Field(default_factory=EdgarConfig)
+    eval: EvalConfig = Field(default_factory=EvalConfig)
 
 
 # ---------------------------------------------------------------------------

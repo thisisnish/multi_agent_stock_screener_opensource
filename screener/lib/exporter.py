@@ -15,6 +15,11 @@ records_to_json(records) -> str
 
 export_pick_history(dao, format, output_path, source, months) -> str
     Convenience wrapper: fetch + serialise + optionally write to disk.
+
+CLI modes (via subcommand)
+--------------------------
+  picks        Export pick history to CSV or JSON (original mode).
+  eval-trend   Print a JSON summary of the last N months of eval trend data.
 """
 
 from __future__ import annotations
@@ -183,31 +188,52 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
     parser = argparse.ArgumentParser(
-        description="Export pick ledger history to CSV or JSON."
+        description="Export pick ledger history or eval trend data."
     )
-    parser.add_argument(
+    subparsers = parser.add_subparsers(dest="report", metavar="REPORT")
+    subparsers.required = False  # default to "picks" mode when omitted
+
+    # ---- picks subcommand (default) ----------------------------------------
+    picks_parser = subparsers.add_parser(
+        "picks",
+        help="Export pick ledger history to CSV or JSON (default mode).",
+    )
+    picks_parser.add_argument(
         "--format",
         choices=["csv", "json"],
         default="csv",
         help="Output format (default: csv)",
     )
-    parser.add_argument(
+    picks_parser.add_argument(
         "--output",
         default=None,
         metavar="FILE",
         help="File path to write; if omitted, output is printed to stdout",
     )
-    parser.add_argument(
+    picks_parser.add_argument(
         "--source",
         default="judge",
         help="Agent source to filter by (default: judge)",
     )
-    parser.add_argument(
+    picks_parser.add_argument(
         "--months",
         nargs="*",
         metavar="YYYY-MM",
         default=None,
         help="Zero or more YYYY-MM month identifiers; omit to export all months",
+    )
+
+    # ---- eval-trend subcommand (P3-09) -------------------------------------
+    trend_parser = subparsers.add_parser(
+        "eval-trend",
+        help="Print a JSON summary of the last N months of eval trend data.",
+    )
+    trend_parser.add_argument(
+        "--months",
+        type=int,
+        default=12,
+        metavar="N",
+        help="Number of trailing months to query (default: 12)",
     )
 
     args = parser.parse_args()
@@ -221,19 +247,30 @@ if __name__ == "__main__":
         database=_app_config.storage.firestore.database,
     )
 
-    _months = args.months if args.months else None
+    # Default to "picks" when no subcommand is given
+    _report_mode = args.report or "picks"
 
-    _content = asyncio.run(
-        export_pick_history(
-            _dao,
-            format=args.format,
-            output_path=args.output,
-            source=args.source,
-            months=_months,
+    if _report_mode == "picks":
+        _months_list = getattr(args, "months", None) or None
+
+        _content = asyncio.run(
+            export_pick_history(
+                _dao,
+                format=getattr(args, "format", "csv"),
+                output_path=getattr(args, "output", None),
+                source=getattr(args, "source", "judge"),
+                months=_months_list,
+            )
         )
-    )
 
-    if args.output is None:
-        print(_content, end="")
+        if getattr(args, "output", None) is None:
+            print(_content, end="")
+
+    elif _report_mode == "eval-trend":
+        from screener.eval.reporter import run_eval_trend_report
+
+        _n_months = getattr(args, "months", 12)
+        _result = asyncio.run(run_eval_trend_report(_dao, n_months=_n_months))
+        print(json.dumps(_result, indent=2))
 
     sys.exit(0)

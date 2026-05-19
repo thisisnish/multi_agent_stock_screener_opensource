@@ -108,6 +108,7 @@ def build_pick_ledger_entries(
         symbol = verdict.get("ticker", "UNKNOWN")
         entry_price = price_by_symbol.get(symbol)
         conf_score: Optional[float] = verdict.get("confidence_score")
+        adaptive_active: bool = verdict.get("adaptive_weights_active", False)
 
         doc = PickLedgerDoc(
             ticker=symbol,
@@ -119,6 +120,7 @@ def build_pick_ledger_entries(
             price_timestamp=now_iso,
             confidence_score=conf_score,
             confidence_tier=_confidence_tier(conf_score),
+            adaptive_weights_active=adaptive_active,
         )
 
         doc_id = pick_ledger_doc_id(symbol, month_id, source)
@@ -197,6 +199,24 @@ def build_performance_snapshot(
     m_count, m_win, m_ret, m_alpha = _tier_stats(tier_entries["Med"])
     l_count, l_win, l_ret, l_alpha = _tier_stats(tier_entries["Low"])
 
+    # Cohort split: adaptive vs default picks.
+    adaptive_entries = [e for e in ledger_entries if e.get("adaptive_weights_active")]
+    default_entries = [
+        e for e in ledger_entries if not e.get("adaptive_weights_active")
+    ]
+
+    def _cohort_win_rate(entries: list[dict]) -> Optional[float]:
+        """Win rate over closed entries (beat_spy not None); None if no closed entries."""
+        closed = [e for e in entries if e.get("beat_spy") is not None]
+        if not closed:
+            return None
+        return sum(1 for e in closed if e.get("beat_spy")) / len(closed)
+
+    adaptive_count: Optional[int] = len(adaptive_entries) if adaptive_entries else None
+    default_count: Optional[int] = len(default_entries) if default_entries else None
+    adaptive_win = _cohort_win_rate(adaptive_entries)
+    default_win = _cohort_win_rate(default_entries)
+
     snapshot = PerformanceSnapshotDoc(
         month_id=month_id,
         source=source,
@@ -222,6 +242,10 @@ def build_performance_snapshot(
         high_avg_alpha_pct=h_alpha,
         med_avg_alpha_pct=m_alpha,
         low_avg_alpha_pct=l_alpha,
+        adaptive_picks_count=adaptive_count,
+        default_picks_count=default_count,
+        adaptive_win_rate=adaptive_win,
+        default_win_rate=default_win,
     )
     return snapshot.model_dump(mode="json")
 

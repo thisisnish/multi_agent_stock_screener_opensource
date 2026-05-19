@@ -437,6 +437,7 @@ class PickLedgerDoc(BaseModel):
     price_timestamp: Optional[str] = None
     confidence_score: Optional[float] = None
     confidence_tier: Optional[str] = None
+    adaptive_weights_active: bool = False
 
 
 class PerformanceSnapshotDoc(BaseModel):
@@ -471,6 +472,14 @@ class PerformanceSnapshotDoc(BaseModel):
     high_avg_alpha_pct: Optional[float] = None
     med_avg_alpha_pct: Optional[float] = None
     low_avg_alpha_pct: Optional[float] = None
+    adaptive_picks_count: Optional[int] = None
+    default_picks_count: Optional[int] = None
+    adaptive_win_rate: Optional[float] = (
+        None  # fraction of closed adaptive picks that beat SPY
+    )
+    default_win_rate: Optional[float] = (
+        None  # fraction of closed default picks that beat SPY
+    )
 
 
 class ChunkDoc(BaseModel):

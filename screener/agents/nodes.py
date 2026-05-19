@@ -132,6 +132,7 @@ def make_memory_read_node(dao: "StorageDAO"):
                 "memory_doc": None,
                 "scoring_weights": None,
                 "prior_months": {},
+                "adaptive_weights_active": False,
             }
 
         # Build prior_months map: {month_id: verdict_dict}
@@ -181,6 +182,7 @@ def make_memory_read_node(dao: "StorageDAO"):
             "memory_doc": current_month_doc,
             "scoring_weights": scoring_weights,
             "prior_months": prior_months,
+            "adaptive_weights_active": adaptive is not None,
         }
 
     return memory_read

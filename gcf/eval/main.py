@@ -198,7 +198,8 @@ async def _run_async(
                     1,
                 ),
                 "avg_argument_structure": round(
-                    sum(r.risk_management for r in rubric_results) / len(rubric_results),
+                    sum(r.risk_management for r in rubric_results)
+                    / len(rubric_results),
                     1,
                 ),
             }

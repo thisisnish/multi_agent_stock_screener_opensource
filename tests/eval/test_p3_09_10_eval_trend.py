@@ -161,9 +161,7 @@ class TestEvalTrendDocWrite:
         dao = _make_mock_dao(picks)
         run_eval_main(_make_app_config(), dao, "2026-03", dry_run=False)
 
-        trend_calls = [
-            c for c in dao.set.call_args_list if c[0][0] == EVAL_TREND
-        ]
+        trend_calls = [c for c in dao.set.call_args_list if c[0][0] == EVAL_TREND]
         assert len(trend_calls) == 1
         assert trend_calls[0][0][1] == "2026-03"
 
@@ -176,9 +174,7 @@ class TestEvalTrendDocWrite:
         dao = _make_mock_dao(picks)
         run_eval_main(_make_app_config(), dao, "2026-03", dry_run=False)
 
-        trend_calls = [
-            c for c in dao.set.call_args_list if c[0][0] == EVAL_TREND
-        ]
+        trend_calls = [c for c in dao.set.call_args_list if c[0][0] == EVAL_TREND]
         doc = trend_calls[0][0][2]
 
         assert doc["period"] == "2026-03"
@@ -223,9 +219,7 @@ class TestConfidenceGapComputation:
 
         dao = _make_mock_dao(picks)
         run_eval_main(_make_app_config(), dao, "2026-03", dry_run=False)
-        trend_calls = [
-            c for c in dao.set.call_args_list if c[0][0] == EVAL_TREND
-        ]
+        trend_calls = [c for c in dao.set.call_args_list if c[0][0] == EVAL_TREND]
         return trend_calls[0][0][2]
 
     def test_confidence_gap_is_none_when_no_high_conf_picks(self):
@@ -326,7 +320,9 @@ class TestRunEvalTrendReport:
         from screener.eval.reporter import _last_n_month_ids
 
         periods = _last_n_month_ids(3)
-        trend_docs = {periods[-1]: self._make_trend_doc(periods[-1], confidence_gap=5.0)}
+        trend_docs = {
+            periods[-1]: self._make_trend_doc(periods[-1], confidence_gap=5.0)
+        }
 
         dao = _make_mock_dao([], trend_docs=trend_docs)
         result = asyncio.run(run_eval_trend_report(dao, n_months=3))
@@ -443,7 +439,9 @@ class TestRubricSamplingDisabled:
         dao = _make_mock_dao(picks)
 
         with patch("gcf.eval.main.score_picks_llm") as mock_llm:
-            run_eval_main(_make_app_config(rubric_sample_rate=0.0), dao, "2026-03", dry_run=True)
+            run_eval_main(
+                _make_app_config(rubric_sample_rate=0.0), dao, "2026-03", dry_run=True
+            )
 
         mock_llm.assert_not_called()
 
@@ -454,7 +452,9 @@ class TestRubricSamplingDisabled:
 
         picks = [_make_closed_pick(beat_spy=True)]
         dao = _make_mock_dao(picks)
-        run_eval_main(_make_app_config(rubric_sample_rate=0.0), dao, "2026-03", dry_run=False)
+        run_eval_main(
+            _make_app_config(rubric_sample_rate=0.0), dao, "2026-03", dry_run=False
+        )
 
         trend_calls = [c for c in dao.set.call_args_list if c[0][0] == EVAL_TREND]
         doc = trend_calls[0][0][2]
@@ -500,8 +500,12 @@ class TestRubricSamplingEnabled:
         dao = _make_mock_dao(picks)
 
         fake_results = [self._make_score_result()]
-        with patch("gcf.eval.main.score_picks_llm", return_value=fake_results) as mock_llm:
-            run_eval_main(_make_app_config(rubric_sample_rate=1.0), dao, "2026-03", dry_run=True)
+        with patch(
+            "gcf.eval.main.score_picks_llm", return_value=fake_results
+        ) as mock_llm:
+            run_eval_main(
+                _make_app_config(rubric_sample_rate=1.0), dao, "2026-03", dry_run=True
+            )
 
         mock_llm.assert_called_once()
 
@@ -513,9 +517,15 @@ class TestRubricSamplingEnabled:
         picks = [_make_closed_pick(beat_spy=True)]
         dao = _make_mock_dao(picks)
 
-        fake_results = [self._make_score_result(timing_quality=80, confidence_alignment=70, risk_management=60)]
+        fake_results = [
+            self._make_score_result(
+                timing_quality=80, confidence_alignment=70, risk_management=60
+            )
+        ]
         with patch("gcf.eval.main.score_picks_llm", return_value=fake_results):
-            run_eval_main(_make_app_config(rubric_sample_rate=1.0), dao, "2026-03", dry_run=False)
+            run_eval_main(
+                _make_app_config(rubric_sample_rate=1.0), dao, "2026-03", dry_run=False
+            )
 
         trend_calls = [c for c in dao.set.call_args_list if c[0][0] == EVAL_TREND]
         doc = trend_calls[0][0][2]
@@ -538,18 +548,24 @@ class TestRubricSamplingEnabled:
 
         # Two results with different sub-scores
         fake_results = [
-            self._make_score_result(timing_quality=80, confidence_alignment=60, risk_management=40),
-            self._make_score_result(timing_quality=60, confidence_alignment=80, risk_management=80),
+            self._make_score_result(
+                timing_quality=80, confidence_alignment=60, risk_management=40
+            ),
+            self._make_score_result(
+                timing_quality=60, confidence_alignment=80, risk_management=80
+            ),
         ]
         with patch("gcf.eval.main.score_picks_llm", return_value=fake_results):
-            run_eval_main(_make_app_config(rubric_sample_rate=1.0), dao, "2026-03", dry_run=False)
+            run_eval_main(
+                _make_app_config(rubric_sample_rate=1.0), dao, "2026-03", dry_run=False
+            )
 
         trend_calls = [c for c in dao.set.call_args_list if c[0][0] == EVAL_TREND]
         doc = trend_calls[0][0][2]
 
         assert doc["rubric_sample_count"] == 2
-        assert doc["avg_reasoning_quality"] == 70.0   # (80+60)/2
-        assert doc["avg_citation_density"] == 70.0    # (60+80)/2
+        assert doc["avg_reasoning_quality"] == 70.0  # (80+60)/2
+        assert doc["avg_citation_density"] == 70.0  # (60+80)/2
         assert doc["avg_argument_structure"] == 60.0  # (40+80)/2
 
     def test_rubric_stats_absent_when_score_picks_llm_returns_empty(self):
@@ -561,7 +577,9 @@ class TestRubricSamplingEnabled:
         dao = _make_mock_dao(picks)
 
         with patch("gcf.eval.main.score_picks_llm", return_value=[]):
-            run_eval_main(_make_app_config(rubric_sample_rate=1.0), dao, "2026-03", dry_run=False)
+            run_eval_main(
+                _make_app_config(rubric_sample_rate=1.0), dao, "2026-03", dry_run=False
+            )
 
         trend_calls = [c for c in dao.set.call_args_list if c[0][0] == EVAL_TREND]
         doc = trend_calls[0][0][2]

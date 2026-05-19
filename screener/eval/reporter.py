@@ -104,10 +104,10 @@ async def run_eval_trend_report(dao, n_months: int = 12) -> dict:
             }
         )
 
-    gaps = [e["confidence_gap"] for e in trend_entries if e["confidence_gap"] is not None]
-    avg_confidence_gap: float | None = (
-        round(sum(gaps) / len(gaps), 1) if gaps else None
-    )
+    gaps = [
+        e["confidence_gap"] for e in trend_entries if e["confidence_gap"] is not None
+    ]
+    avg_confidence_gap: float | None = round(sum(gaps) / len(gaps), 1) if gaps else None
 
     return {
         "months_queried": len(month_ids),

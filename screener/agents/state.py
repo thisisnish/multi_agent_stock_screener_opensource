@@ -68,7 +68,9 @@ class DebateState(TypedDict, total=False):
     memory_doc: Optional[dict]
     scoring_weights: Optional[dict]
     prior_months: dict  # {month_id: WeekVerdict-like dict}
-    adaptive_weights_active: bool  # True when compute_adaptive_weights returned non-None
+    adaptive_weights_active: (
+        bool  # True when compute_adaptive_weights returned non-None
+    )
 
     # --- build_context outputs ---
     disclosure_block: Optional[str]

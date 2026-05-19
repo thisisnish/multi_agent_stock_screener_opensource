@@ -272,7 +272,6 @@ class EdgarConfig(BaseModel):
         return v
 
 
-
 class EvalConfig(BaseModel):
     """Evaluation run settings (P3-10: rubric sample scoring)."""
 
@@ -288,9 +287,7 @@ class EvalConfig(BaseModel):
     @classmethod
     def rubric_sample_rate_must_be_fraction(cls, v: float) -> float:
         if not 0.0 <= v <= 1.0:
-            raise ValueError(
-                f"eval.rubric_sample_rate must be in [0.0, 1.0], got {v}"
-            )
+            raise ValueError(f"eval.rubric_sample_rate must be in [0.0, 1.0], got {v}")
         return v
 
 

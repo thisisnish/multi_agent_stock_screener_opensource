@@ -266,4 +266,3 @@ def score_picks_llm(
                 "score_picks_llm: failed to score pick for %s -- skipping", ticker
             )
     return results
-

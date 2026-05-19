@@ -201,7 +201,9 @@ def build_performance_snapshot(
 
     # Cohort split: adaptive vs default picks.
     adaptive_entries = [e for e in ledger_entries if e.get("adaptive_weights_active")]
-    default_entries = [e for e in ledger_entries if not e.get("adaptive_weights_active")]
+    default_entries = [
+        e for e in ledger_entries if not e.get("adaptive_weights_active")
+    ]
 
     def _cohort_win_rate(entries: list[dict]) -> Optional[float]:
         """Win rate over closed entries (beat_spy not None); None if no closed entries."""

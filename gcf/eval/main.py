@@ -37,11 +37,18 @@ from screener.eval.metrics import (
     detect_systematic_issues,
     format_metrics_report,
 )
-from screener.eval.scorer import score_picks_pure_math
+from screener.eval.scorer import score_picks_llm, score_picks_pure_math
 from screener.lib.config_loader import AppConfig, load_config
 from screener.lib.storage.base import StorageDAO
 from screener.lib.storage.firestore import FirestoreDAO
-from screener.lib.storage.schema import EVAL, PICKS, eval_doc_id
+from screener.lib.storage.schema import (
+    EVAL,
+    EVAL_TREND,
+    PICKS,
+    EvalTrendDoc,
+    eval_doc_id,
+    eval_trend_doc_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +169,42 @@ async def _run_async(
             "total_picks": len(picks),
         }
 
+    # P3-10: optional LLM rubric sampling
+    rubric_stats: dict = {}
+    rubric_sample_rate: float = getattr(app_config.eval, "rubric_sample_rate", 0.0)
+    if rubric_sample_rate > 0.0 and picks:
+        import math
+        import random
+
+        sample_size = math.ceil(len(picks) * rubric_sample_rate)
+        sampled = random.sample(picks, min(sample_size, len(picks)))
+        logger.info(
+            "LLM rubric scoring: sampling %d of %d picks (rate=%.0f%%)",
+            len(sampled),
+            len(picks),
+            rubric_sample_rate * 100,
+        )
+        rubric_results = score_picks_llm(sampled, app_config)
+        if rubric_results:
+            rubric_stats = {
+                "rubric_sample_count": len(rubric_results),
+                "avg_reasoning_quality": round(
+                    sum(r.timing_quality for r in rubric_results) / len(rubric_results),
+                    1,
+                ),
+                "avg_citation_density": round(
+                    sum(r.confidence_alignment for r in rubric_results)
+                    / len(rubric_results),
+                    1,
+                ),
+                "avg_argument_structure": round(
+                    sum(r.risk_management for r in rubric_results)
+                    / len(rubric_results),
+                    1,
+                ),
+            }
+            logger.info("rubric sampling complete: %s", rubric_stats)
+
     picks_metadata = [
         {
             "return_pct": p.get("pick_return_pct"),
@@ -181,6 +224,40 @@ async def _run_async(
     acid_test = compute_acid_test(picks)
     disclosure_rate = compute_disclosure_citation_rate(picks)
     metrics.disclosure_citation_rate = disclosure_rate
+
+    # P3-09: build and persist the eval trend document
+    confidence_gap: float | None = None
+    if (
+        metrics.high_confidence_accuracy is not None
+        and metrics.low_confidence_accuracy is not None
+    ):
+        confidence_gap = round(
+            metrics.high_confidence_accuracy - metrics.low_confidence_accuracy, 1
+        )
+
+    trend_doc = EvalTrendDoc(
+        period=month_id,
+        overall_accuracy=metrics.overall_accuracy,
+        bull_accuracy=metrics.bull_accuracy,
+        bear_accuracy=metrics.bear_accuracy,
+        high_confidence_accuracy=metrics.high_confidence_accuracy,
+        medium_confidence_accuracy=metrics.medium_confidence_accuracy,
+        low_confidence_accuracy=metrics.low_confidence_accuracy,
+        confidence_calibration=metrics.confidence_calibration,
+        confidence_gap=confidence_gap,
+        avg_score=metrics.avg_score,
+        directional_bias=metrics.directional_bias,
+        disclosure_citation_rate=disclosure_rate,
+        **rubric_stats,
+    )
+
+    if not dry_run:
+        await dao.set(
+            EVAL_TREND,
+            eval_trend_doc_id(month_id),
+            trend_doc.model_dump(mode="json"),
+        )
+        logger.info("wrote eval trend doc for %s", month_id)
 
     eval_context = _build_eval_context(metrics, issues, acid_test)
 

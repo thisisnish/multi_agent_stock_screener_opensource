@@ -132,3 +132,14 @@ edgar:
   # "Business", "Legal Proceedings", "Quantitative and Qualitative Disclosures",
   # "Controls and Procedures".
   retrieval_sections: []
+
+# ---------------------------------------------------------------------------
+# Eval settings
+# ---------------------------------------------------------------------------
+eval:
+  # Fraction of closed picks to score via the LLM rubric on each eval run.
+  # Range: [0.0, 1.0].  0.0 disables rubric sampling entirely (default).
+  # Each sampled pick costs one LLM inference call; start with 0.1 to sample
+  # ~10% before committing to higher rates in production.
+  rubric_sample_rate: 0.0
+

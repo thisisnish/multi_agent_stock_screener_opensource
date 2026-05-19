@@ -189,7 +189,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
     parser = argparse.ArgumentParser(
-        description="Export pick ledger history or calibration trend data."
+        description="Export pick ledger history, eval trend data, or calibration trend data."
     )
     subparsers = parser.add_subparsers(dest="report", metavar="REPORT")
     subparsers.required = False  # default to "picks" mode when omitted
@@ -224,7 +224,7 @@ if __name__ == "__main__":
         help="Zero or more YYYY-MM month identifiers; omit to export all months",
     )
 
-    # ---- eval-trend subcommand ---------------------------------------------
+    # ---- eval-trend subcommand (P3-09) -------------------------------------
     trend_parser = subparsers.add_parser(
         "eval-trend",
         help="Print a JSON summary of the last N months of eval trend data.",

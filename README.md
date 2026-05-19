@@ -27,6 +27,59 @@ Works with any LLM provider (Anthropic, OpenAI, Gemini, Ollama, Groq). Storage r
 
 ---
 
+## Verifying Loop Effectiveness
+
+The eval loop and calibration loop produce structured telemetry you can query directly to measure whether the system is actually improving over time.
+
+### Is the calibration loop converging?
+
+```bash
+python -m screener.lib.exporter calibration-trend --months 12
+```
+
+Returns JSON with `calibration_ok_rate` (fraction of months where High>Med>Low held without drift), `avg_drift_flags`, and a `weight_delta_trend` list showing `delta_magnitude` per month. A healthy system shows weight adjustments (`delta_magnitude`) shrinking over time — the loop is settling toward stable confidence weights. Constant large deltas indicate the confidence model is unstable or misaligned with actual pick quality.
+
+### Is the confidence gap widening?
+
+```bash
+python -m screener.lib.exporter eval-trend --months 12
+```
+
+Returns monthly accuracy broken down by confidence tier. Key fields:
+- `confidence_gap`: high-confidence accuracy minus low-confidence accuracy. This should widen as the system improves at discriminating strong vs weak picks.
+- `confidence_calibration`: gap between average stated confidence and overall accuracy. This should shrink over time (confidence should be realistic).
+
+If both metrics are stable or moving in the wrong direction, the Judge's confidence model needs recalibration.
+
+### Are adaptive weights beating default weights?
+
+Query Firestore `performance/{MONTH_ID}_judge` documents directly (or via your preferred Firestore client). Each `PerformanceSnapshotDoc` includes:
+- `adaptive_picks_count`, `adaptive_win_rate`: accuracy of picks made with per-ticker adaptive bull/bear weights
+- `default_picks_count`, `default_win_rate`: accuracy of picks made with default 50/50 weights
+
+If `adaptive_win_rate > default_win_rate` consistently across months, the per-ticker learning loop is working. If they converge, you may not have enough historical data per ticker yet (the system needs ≥4 scored months per ticker to unlock adaptive weights).
+
+### Optional: LLM reasoning quality
+
+To measure reasoning quality directly via LLM assessment:
+
+1. Update `config/config.yaml`:
+```yaml
+eval:
+  rubric_sample_rate: 0.2  # Score 20% of picks with LLM rubric each month
+```
+
+2. Run eval as normal. Sampled LLM sub-scores (reasoning quality, citation density, argument structure) are averaged and written to `eval_trend/{MONTH_ID}` alongside the mathematical metrics.
+
+3. Query via CLI:
+```bash
+python -m screener.lib.exporter eval-trend --months 12
+```
+
+If rubric sub-scores are improving month-over-month, the system is reasoning more rigorously.
+
+---
+
 ## Prerequisites
 
 - Python 3.11+

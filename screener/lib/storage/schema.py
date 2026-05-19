@@ -474,8 +474,12 @@ class PerformanceSnapshotDoc(BaseModel):
     low_avg_alpha_pct: Optional[float] = None
     adaptive_picks_count: Optional[int] = None
     default_picks_count: Optional[int] = None
-    adaptive_win_rate: Optional[float] = None  # fraction of closed adaptive picks that beat SPY
-    default_win_rate: Optional[float] = None  # fraction of closed default picks that beat SPY
+    adaptive_win_rate: Optional[float] = (
+        None  # fraction of closed adaptive picks that beat SPY
+    )
+    default_win_rate: Optional[float] = (
+        None  # fraction of closed default picks that beat SPY
+    )
 
 
 class ChunkDoc(BaseModel):

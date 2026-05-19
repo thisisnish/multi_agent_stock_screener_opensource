@@ -1200,7 +1200,7 @@ class TestBuildPerformanceSnapshotAdaptiveCohort:
         from screener.performance.tracker import build_performance_snapshot
 
         entries = [
-            self._make_entry(True),   # active, beat_spy=None
+            self._make_entry(True),  # active, beat_spy=None
             self._make_entry(False),  # active, beat_spy=None
         ]
         snap = build_performance_snapshot("2026-04", entries, entry_spy_price=520.0)
